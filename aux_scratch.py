@@ -1,6 +1,6 @@
 from vectors import Vector2D
 
-def botToPoint(targetPoint, bot, action, rules):
+def botToPointAndStop(targetPoint, bot, action, rules):
   botVec = Vector2D(bot.x, bot.z)
   vecToTarget = targetPoint - botVec
   dst = vecToTarget.len()
@@ -55,11 +55,13 @@ def botToPoint(targetPoint, bot, action, rules):
   else:
     action.target_velocity_z = (2 * dstZ * 100 ) ** 0.5 * signZ
 
+  '''
   outS_2 = 'dstX: {dstnX:.4}, trgVx: {trgVx:.4}, trgVz: {trgVz:.4}'.format(
                             trgVx = action.target_velocity_x,
                             dstnX = dstX,
                             trgVz = action.target_velocity_z )
   print(outS_2)
+  '''
   # не сработает
   if ( bot.x == targetPoint.x and
        bot.z == targetPoint.z and
@@ -68,6 +70,29 @@ def botToPoint(targetPoint, bot, action, rules):
     return True
   else:
     return False
+
+def botToPointAndKick(targetPoint, bot, action, rules):
+  # TODO добавить параметров
+  botVec = Vector2D(bot.x, bot.z)
+  vecToTarget = targetPoint - botVec
+
+  velocityVec = vecToTarget.normalize() * rules.ROBOT_MAX_GROUND_SPEED
+  action.target_velocity_x = velocityVec.x
+  action.target_velocity_z = velocityVec.z
+
+# ==^== botToPointAndKick() ==^==
+
+def solveSquareEquation(a, b, c):
+  discr = b ** 2 - 4 * a * c
+  if (discr < 0):
+    return None
+  elif ( discr == 0 ):
+    root = - (b / (2 * a))
+    return (root, root)
+  else:
+    root1 = (-b + (discr ** 0.5)) / (2 * a)
+    root2 = (-b - (discr ** 0.5)) / (2 * a)
+    return (root1, root2)
 
 TICKS_PER_SECOND = 60
 ROBOT_MAX_GROUND_SPEED = 30
