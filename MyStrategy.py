@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
 
 from vectors import Vector2D, Vector3D
-from aux_scratch import botToPointAndStop, botToPointAndKick, solveSquareEquation
+from aux_scratch import botToPointAndStop
+from prediction import BallPredictor, distanceBetweenCenters
+from bot_control import BotController
 import copy
 
 class MiscInfo:
   pass
 
+ballPred = None
+botControl = None
 miscInfo = MiscInfo()
 miscInfo.initDone = False
 miscInfo.ballPrevTick = None
@@ -79,15 +83,20 @@ def getPursuePoint(bot, game):
 
   vecToBall = ballRVec - botRVec
   intermVec = vecToBall.normalize()
+  
+  dst = distanceBetweenCenters(game.ball, bot)
+  multiplier = dst / (dst - 3.0 + 1e-10)
   if ( bot.x <= game.ball.x ):
     ortoVec = Vector2D(intermVec.z, Vector2D(0.0, 0.0) - intermVec.x)
   else:
     ortoVec = Vector2D(Vector2D(0.0, 0.0) - intermVec.z, intermVec.x)
-  pursuePtVec = vecToBall + ortoVec
+  pursuePtVec = vecToBall + ortoVec * multiplier
 
   return pursuePtVec
 
 def init(me, rules, game):
+  global ballPred
+  global botControl
   global miscInfo
   if (miscInfo.initDone == False):
     miscInfo.ballPrevTick = game.ball
@@ -100,6 +109,9 @@ def init(me, rules, game):
     miscInfo.reqX = 10.0 # me.z * 1.5
     miscInfo.reqZ = 20.0 # 0.0 - me.x * 2
     miscInfo.prevBotState = me
+
+    ballPred = BallPredictor(rules)
+    botControl = BotController(rules)
     # ====
 
     
@@ -151,6 +163,10 @@ class MyStrategy:
     setRoles(game) #runs once per tick
     #print(miscInfo.roles)
 
+    #print(game.current_tick )
+    #if (game.current_tick == 50):
+      #exit()
+    '''
     #rVec = Vector2D(miscInfo.reqX, miscInfo.reqZ)
     rVec = Vector2D( game.ball.x, game.ball.z )
     
@@ -161,7 +177,8 @@ class MyStrategy:
           ( 1/rules.TICKS_PER_SECOND )
       miscInfo.prevBotState = me
       dst = (rVec - Vector2D(me.x, me.z)).len()
-      '''
+    '''
+    '''
       outS = 'cT: {cT}, dst: {dstn:.4}, acc:{acc:.4}'.format(
                             cT = game.current_tick,
                             dstn = dst,
@@ -172,21 +189,28 @@ class MyStrategy:
                             trgVx = action.target_velocity_x,
                             trgVz = action.target_velocity_z )
       print(outS_2)
-      '''
+    '''
+
 
     if ( miscInfo.roles[me.id] == 'attacker' ):
       if ( me.z > game.ball.z ):
         pursuePt = getPursuePoint(me, game)
         pursuePt2D = Vector2D(pursuePt.x, pursuePt.z)
-        botToPointAndKick(pursuePt2D, me, action, rules)
+        #botToPointAndKick(pursuePt2D, me, action, rules)
+        botControl.botToPoint(pursuePt2D, me, action)
+        botControl.preventWallCollision(me, action)
       else:
-        strikePoint = getStrikePoint(game)
+        strikePoint = botControl.getStrikePoint(game)
         strikePt2D = Vector2D(strikePoint.x, strikePoint.z)
-        botToPointAndKick(strikePt2D, me, action, rules)
+        botControl.botToPoint(strikePt2D, me, action)
+
+        botControl.preventWallCollision(me, action)
 
         # botToPointAndKick не обрабатывает прыжки!
+        botControl.assignJump(me, ballPred, game, action)
 
-        miscInfo.maxFlightHalfTime
+        '''
+        #miscInfo.maxFlightHalfTime
         tic = 1 / rules.TICKS_PER_SECOND
         fhTime = int(miscInfo.maxFlightHalfTime / tic) + 1
         # моделируем на fhTime тиков положение мяча и робота
@@ -276,6 +300,7 @@ class MyStrategy:
           dst = (ballRVec - meStatesJumping[ix]).len()
           if (dst < (rules.ROBOT_MIN_RADIUS + rules.BALL_RADIUS)):
             action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED
+        '''
 
     else: # if ( miscInfo.roles[me.id] == 'defender' ):
       # берем из quick_start
@@ -292,6 +317,12 @@ class MyStrategy:
           if abs(x) < rules.arena.goal_width / 2.0:
               # То пойдем защищать его
               target_pos.x = x
+              target_pos.z = -(rules.arena.depth / 2.0) - 2
+
+      if (distanceBetweenCenters(game.ball, me) < rules.arena.goal_width / 2.0):
+        target_pos.x = game.ball.x
+        target_pos.z = game.ball.z
+                
       # Установка нужных полей для желаемого действия
       target_velocity = Vector2D(
           target_pos.x - me.x, target_pos.z - me.z) * rules.ROBOT_MAX_GROUND_SPEED
@@ -306,8 +337,11 @@ class MyStrategy:
         # Если при прыжке произойдет столкновение с мячом, и мы находимся
         # с той же стороны от мяча, что и наши ворота, прыгнем, тем самым
         # ударив по мячу сильнее в сторону противника
-      jump = (dist_to_ball < rules.BALL_RADIUS +
-              rules.ROBOT_MAX_RADIUS and me.z < game.ball.z)
+      dst = ( Vector2D(ball.x, ball.y) - Vector2D(me.x, me.y) ).len()#
+      t = dst / ( Vector2D(ball.x, ball.y) - Vector2D(me.x, me.y) )#
+      jump =( (dist_to_ball < rules.BALL_RADIUS +
+              rules.ROBOT_MAX_RADIUS and me.z < game.ball.z) or
+              () )
       action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED if jump else 0.0
             
 

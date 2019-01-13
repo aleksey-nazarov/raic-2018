@@ -82,17 +82,7 @@ def botToPointAndKick(targetPoint, bot, action, rules):
 
 # ==^== botToPointAndKick() ==^==
 
-def solveSquareEquation(a, b, c):
-  discr = b ** 2 - 4 * a * c
-  if (discr < 0):
-    return None
-  elif ( discr == 0 ):
-    root = - (b / (2 * a))
-    return (root, root)
-  else:
-    root1 = (-b + (discr ** 0.5)) / (2 * a)
-    root2 = (-b - (discr ** 0.5)) / (2 * a)
-    return (root1, root2)
+
 
 TICKS_PER_SECOND = 60
 ROBOT_MAX_GROUND_SPEED = 30

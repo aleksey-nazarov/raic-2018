@@ -92,3 +92,16 @@ class Vector3D:
       return Vector3D(self.x/self.len(),\
                       self.y/self.len(),\
                       self.z/self.len())
+
+  # скалярное умножение векторов
+  def scalarMul(self, oth):
+    return self.x * oth.x + self.y * oth.y + self.z * oth.z
+
+  # проекция вектора на вектор oth
+  def projectOn(self, oth):
+    selfLen = self.len()
+    othLen = oth.len()
+    cosin = (self.scalarMul(oth)) / (selfLen * othLen )
+    projLen = selfLen * cosin
+    proj = oth.normalize() * projLen
+    return proj
