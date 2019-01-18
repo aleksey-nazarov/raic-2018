@@ -1,13 +1,14 @@
 from vectors import Vector2D, Vector3D
 import copy
 
-
+ALLOWED_POSITION_DIVERGENCE = 0.01
+ALLOWED_VELOCITY_DIVERGENCE = 0.001
 
 class BotController:
   def __init__(self, rules):
     self.rules = rules
     # вспомогательные константы, позволяющие сократить вычисления
-    #self.tik = 1 / rules.TICKS_PER_SECOND
+    self.tik = 1 / rules.TICKS_PER_SECOND
     # изменение вертикальной скорости за 1 тик при отсутствии столкновений
     #self.baseVelYDelta = self.rules.GRAVITY * self.tik
 
@@ -61,6 +62,79 @@ class BotController:
     velocityVec = vecToTarget.normalize() * self.rules.ROBOT_MAX_GROUND_SPEED
     action.target_velocity_x = velocityVec.x
     action.target_velocity_z = velocityVec.z
+
+  def botToPointAndStop(self, targetPoint, bot, action):
+    botVec = Vector2D(bot.x, bot.z)
+    vecToTarget = targetPoint - botVec
+    allowedComponentDivergence = ALLOWED_POSITION_DIVERGENCE / ( 2 ** 0.5 )
+    allowedVelocityComponentDivergence = ALLOWED_VELOCITY_DIVERGENCE / ( 2 ** 0.5 )
+    
+    dst = vecToTarget.len()
+    dstX = vecToTarget.x
+    signX = 1.0
+    if ( dstX < 0 ):
+      dstX = abs(dstX)
+      signX = -1.0
+    dstZ = vecToTarget.z
+    signZ = 1.0
+    if ( dstZ < 0 ):
+      dstZ = abs(dstZ)
+      signZ = -1.0
+
+    velocityX = bot.velocity_x
+    velocityZ = bot.velocity_z
+    signVelocX = 1.0
+    if (velocityX < 0):
+      velocityX = abs(velocityX)
+      signVelocX = -1.0
+    signVelocZ = 1.0
+    if (velocityZ < 0):
+      velocityZ = abs(velocityZ)
+      signVelocZ = -1.0
+
+    brakeTx = velocityX / self.rules.ROBOT_ACCELERATION
+    brakeTz = velocityZ / self.rules.ROBOT_ACCELERATION
+    #brakeDstZ = 100 * brakeTz**2 / 2 + 30 * tik + 100*tik**2/2
+    # 30 (max), или текущая скорость ?
+    brakeDstX = self.rules.ROBOT_ACCELERATION * brakeTx**2 / 2 + \
+                velocityX * self.tik + \
+                self.rules.ROBOT_ACCELERATION * self.tik**2 / 2
+    brakeDstZ = self.rules.ROBOT_ACCELERATION * brakeTz**2 / 2 + \
+                velocityZ * self.tik + \
+                self.rules.ROBOT_ACCELERATION * self.tik**2 / 2
+    
+    if (dstX < allowedComponentDivergence):
+      action.target_velocity_x = 0.0
+    elif ( dstX < brakeDstX and
+         signVelocX * signX > 0 ): # т.е. знаки совпадают
+      accel = ( bot.velocity_x ** 2 ) / (2 * dstX)
+      action.target_velocity_x = \
+       (bot.velocity_x - accel * self.tik) * signVelocX
+    else:
+      action.target_velocity_x = \
+        (2 * dstX * self.rules.ROBOT_ACCELERATION ) ** 0.5 * signX
+
+    if (dstZ < allowedComponentDivergence):
+      action.target_velocity_z = 0.0
+    elif ( dstZ < brakeDstZ and
+         signVelocZ * signZ > 0 ): # т.е. знаки совпадают
+      accel = ( bot.velocity_z ** 2 ) / (2 *dstZ)
+      action.target_velocity_z = \
+       (bot.velocity_z - accel * self.tik) * signVelocZ
+    else:
+      action.target_velocity_z = \
+        (2 * dstZ * self.rules.ROBOT_ACCELERATION ) ** 0.5 * signZ
+
+    if ( ( Vector2D(bot.x, bot.z) -
+           Vector2D(targetPoint.x, targetPoint.z) ).len() < \
+           2 * ALLOWED_POSITION_DIVERGENCE and
+         # пришлось ввести дополнительный множитель 2, т.к. без него робот
+         # иногда не до конца приходит в круг радиуса ALLOWED_POSITION_DIVERGENCE
+         Vector2D(bot.velocity_x, bot.velocity_z).len() < \
+           ALLOWED_VELOCITY_DIVERGENCE ):
+      return True
+    else:
+      return False
       
   def getAimPoint(self, game):
     # точка в воротах противника, траектория полета мяча к которой 
