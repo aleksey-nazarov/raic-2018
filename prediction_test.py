@@ -21,7 +21,7 @@ def ballFromLog(ballLogForm):
 
 #inQuestion = [1364, 1365, 1366, 1457, 2574, 2888]
 
-gameLog = [json.loads(s) for s in open('ESG.log', 'rt')]
+gameLog = [json.loads(s) for s in open('half_pipe.log', 'rt')]
 
 rulesDct = gameLog[0]
 gameLog = gameLog[1:]
@@ -29,18 +29,35 @@ rules = Rules(rulesDct)
 
 ballPred = BallPredictor(rules)
 
-basicMoment = gameLog[0]
+basicMoment = gameLog[155]
 basicBall = ballFromLog(basicMoment['ball'])
 
-for ix in range(10):
-  t = ix * 0.1
-  print(t)
-  predictedBall = ballPred.predictedBall(basicBall, t)
-  
-  print(predictedBall.x, predictedBall.y, predictedBall.z)
-  print(predictedBall.velocity_x, predictedBall.velocity_y,
-        predictedBall.velocity_z)
-  print()
+for e in gameLog[164:165]:
+#for e in gameLog[:4]:
+  timeInterv = (e['current_tick'] - basicMoment['current_tick']) * ballPred.tik
+  ball = ballFromLog(e['ball'])
+  #print('a', basicBall.y)
+  predictedBall = ballPred.predictedBall(basicBall, timeInterv)
+  delta = distanceBetweenCenters(ball, predictedBall)
+  print(e['current_tick'], delta)
+  print('ball_xs',predictedBall.x, ball.x)
+  print('ball_ys',predictedBall.y, ball.y)
+  print('ball_zs',predictedBall.z, ball.z)
+
+
+'''
+for e in gameLog[650:660]:
+  print(e['current_tick'], e['ball']['velocity']['x'],
+        e['ball']['velocity']['z'])
+print()
+for e in gameLog[703:715]:
+  print(e['current_tick'], e['ball']['position']['y'],
+        e['ball']['velocity']['y'])
+print()
+for e in gameLog[760:770]:
+  print(e['current_tick'], e['ball']['velocity']['x'],
+        e['ball']['velocity']['z'])
+'''
 
 '''
 e = gameLog[0]
