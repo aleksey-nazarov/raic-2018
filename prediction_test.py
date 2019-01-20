@@ -7,6 +7,9 @@ from vectors import Vector2D, Vector3D
 
 from prediction import solveSquareEquation
 
+class GameStub:
+  pass
+
 def ballFromLog(ballLogForm):
   ballD = {}
   ballD['x'] = ballLogForm['position']['x']
@@ -21,7 +24,7 @@ def ballFromLog(ballLogForm):
 
 #inQuestion = [1364, 1365, 1366, 1457, 2574, 2888]
 
-gameLog = [json.loads(s) for s in open('half_pipe.log', 'rt')]
+gameLog = [json.loads(s) for s in open('ESG.log', 'rt')]
 
 rulesDct = gameLog[0]
 gameLog = gameLog[1:]
@@ -30,32 +33,70 @@ rules = Rules(rulesDct)
 ballPred = BallPredictor(rules)
 
 #basicMoment = gameLog[106]
-basicMoment = gameLog[81]
-basicBall = ballFromLog(basicMoment['ball'])
+#basicMoment = gameLog[81]
+#basicBall = ballFromLog(basicMoment['ball'])
 
-for e in gameLog[245:390]:
-##for e in [gameLog[196],
-##          gameLog[260],
-##          gameLog[270],
-##          gameLog[273],
-##          gameLog[276]]:
+#ball = ballFromLog(gameLog[0]['ball'])
+ball = ballFromLog(gameLog[0]['ball'])
+gameStub = GameStub()
+gameStub.ball = ball
+#gameStub.current_tick = gameLog[0]['current_tick']
+gameStub.current_tick = gameLog[0]['current_tick']
+ballPred.update(gameStub)
+
+ALLOWED_POSITION_DIVERGENCE = 0.5
+traced = []
+#traced = list(range(45, 196))
+#traced.extend(list(range(370, 469)))
+
+for e in gameLog[1:]:
   ball = ballFromLog(e['ball'])
+  gameStub = GameStub()
+  gameStub.ball = ball
+  gameStub.current_tick = e['current_tick']
+
+  trajectory = ballPred.getPredictedTrajectory()
+
+  found = False
+  for b in trajectory:
+    if ( b.tick == e['current_tick'] ):
+      found = True
+      delta = (Vector3D(b.x, b.y, b.z) - Vector3D(ball.x, ball.y, ball.z)).len()
+      break
+
+  if (found == False):
+    print('tick', e['current_tick'], 'NOT FOUND')
+  if (delta > ALLOWED_POSITION_DIVERGENCE):
+    print(e['current_tick'], 'LARGE DIVERGENCE')
+  if ( e['current_tick'] in traced ):
+    print(e['current_tick'], 'DELTA', delta)
+  ballPred.update(gameStub)
+
+# total calculs!
+
+'''
+  ballPred.update(gameStub)
   ticks = e['current_tick'] - basicMoment['current_tick']
   predictedBall = ballPred.predictedBall(basicBall, ticks)
   delta = distanceBetweenCenters(ball, predictedBall)
-  print(e['current_tick'], delta)
+  #print(e['current_tick'], delta)
+  if (delta > 0.5):
+    basicMoment = e
+    basicBall = ballFromLog(basicMoment['ball'])
+    recalcs += 1
   #print(ball.x, ball.y, ball.z)
   #print(predictedBall.x, predictedBall.y, predictedBall.z)
-
+print(recalcs)
+'''
   
-  '''
+'''
   ball = ballFromLog(e['ball'])
   pt = Vector3D(ball.x, ball.y, ball.z)
   dst, norm = ballPred.distanceToArena(pt)
   print('  == ', e['current_tick'], ' ==')
   print(dst, '   ', norm.x, norm.y, norm.z)
   print(ball.x, ball.y, ball.z)
-  '''
+'''
 
 
 '''

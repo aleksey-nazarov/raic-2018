@@ -45,6 +45,9 @@ class Vector2D:
   def __mul__(self, num: float):
       return Vector2D(self.x * num, self.z * num)
 
+  def __truediv__(self, num: float):
+    return Vector2D(self.x / num, self.z / num)
+
   # Нормализация вектора (приведение длины к 1)
   def normalize(self):
       len_ = self.len()

@@ -10,6 +10,11 @@ import numpy as np
 ALLOWED_CALCULATIONS_ERROR = 1e-10
 AXIS_VELOCITY_THRESHOLD = 0.01
 
+ALLOWED_POSITION_DIVERGENCE = 0.5
+# эмпирически полагаем, что прогнозирования на две секунды
+# вперед должно хватить
+PREDICTION_TICKS_COUNT = 120
+
 def solveSquareEquation(a, b, c):
   discr = b ** 2 - 4 * a * c
   if (discr < 0):
@@ -68,6 +73,13 @@ def distanceToSphereOuter(point, sphereCenter, sphereRadius):
 class BallPredictor:
   def __init__(self, rules):
     self.rules = rules
+    # TODO REMOVE дебажное значение - все тики, просчитанные за время работы
+    # объекта
+    self.totalTicksCalculated = 0
+    # список с предсказанными состояниями мяча
+    # Trajectory Point - это Ball с добавленным к нему параметром tick
+    self.trajectoryPoints = []
+    self.currentTick = -1
     # вспомогательные константы, позволяющие сократить вычисления
     self.tik = 1 / rules.TICKS_PER_SECOND
     self.halfWidth = self.rules.arena.width / 2
@@ -75,8 +87,102 @@ class BallPredictor:
     # изменение вертикальной скорости за 1 тик при отсутствии столкновений
     self.baseVelYDelta = self.rules.GRAVITY * self.tik
 
+  def update(self, game):
+    if (self.currentTick == game.current_tick):
+      return
+
+    self.currentTick = game.current_tick
+    currentPointIx = 0
+    found = False
+    # в штатной ситуации цикл завершается на второй итерации
+    for tp in self.trajectoryPoints:
+      if (tp.tick == self.currentTick):
+        found = True
+        break
+      currentPointIx += 1
+
+    if ( found == False ):
+      # список пуст или произошла невообразимо кошмарная ошибка, исправление которой
+      # начнется с очистки списка
+      #self.trajectoryPoints.clear()
+      self.recalculateTrajectory(game)
+    else:
+      self.trajectoryPoints = self.trajectoryPoints[currentPointIx:]
+      currentPt = self.trajectoryPoints[0]
+      realPos = Vector3D(game.ball.x, game.ball.y, game.ball.z)
+      predictedPos = Vector3D(currentPt.x, currentPt.y, currentPt.z)
+      delta = (realPos - predictedPos).len()
+      if ( delta >  ALLOWED_POSITION_DIVERGENCE ):
+        # перестраиваем прогноз заново, с текущего состояния
+        #self.trajectoryPoints.clear()
+        self.recalculateTrajectory(game)
+      self.fillTrajectory()
+
+  def recalculateTrajectory(self, game):
+    self.trajectoryPoints.clear()
+    newBall = copy.copy(game.ball)
+    newBall.tick = game.current_tick
+    self.trajectoryPoints.append(newBall)
+    for i in range(1, PREDICTION_TICKS_COUNT):
+      # без второго параметра предсказывает на 1 тик
+      newBall = self.predictedBall(newBall)
+      newBall.tick = game.current_tick + i
+      self.trajectoryPoints.append(newBall)
+      self.totalTicksCalculated += 1
+
+  def fillTrajectory(self):
+    # дополняет прогноз до положенного количества точек
+    if ( len(self.trajectoryPoints) < PREDICTION_TICKS_COUNT ):
+      need = PREDICTION_TICKS_COUNT - len(self.trajectoryPoints) + 1
+      newBall = self.trajectoryPoints[-1]
+      baseTick = newBall.tick
+      for i in range(1, need):
+        newBall = self.predictedBall(newBall)
+        newBall.tick = baseTick + i
+        self.trajectoryPoints.append(newBall)
+        self.totalTicksCalculated += 1
+
+  def getPredictedBall(self, ticksAhead = 1,
+                       absoluteTick = None,
+                       timeAhead = None):
+    # время, на которое клиент запрашивает прогноз, может задаваться:
+    # - количеством тиков, считая от текущего (приоритет 3)
+    # - абсолютным номером тика (приоритет 2)
+    # - временем, считая от текущего (приоритет 1 - высший)
+    # (приоритет - определяет, какой параметр использовать,
+    # если указано больше одного)
+
+    needTik = self.currentTick + ticksAhead
+
+    if ( absoluteTick != None ):
+      needTik = absoluteTick
+      if (absoluteTick < currentTick):
+        return None # проверка возлагается на клиента!
+    
+    if ( timeAhead != None ):
+      tiks = int(timeAhead / self.tik) + 1
+
+    if ( needTik == currentTik ):
+      print('getPredictedBall() unexpected behavior')
+      bl = game.ball
+      bl.tick = self.currentTick
+      return bl
+
+    for b in trajectoryPoints:
+      if ( b.tik == needTik ):
+        return b
+
+    return None
+
+  def getPredictedTrajectory(self):
+    return self.trajectoryPoints
+
   def distanceToArenaQuarter(self, point):
     arena = self.rules.arena
+    # element for comparison
+    def dstCompEl(e):
+      return e[0]
+    
     # Ground
     dst = distanceToPlane( point,
                            Vector3D(0,0,0),
@@ -85,17 +191,17 @@ class BallPredictor:
     dst = min( dst,
                distanceToPlane( point,
                                 Vector3D(0, arena.height, 0),
-                                Vector3D(0,-1,0) ) )
+                                Vector3D(0,-1,0) ), key = dstCompEl )
     # X side
     dst = min( dst,
                distanceToPlane( point,
                                 Vector3D(self.halfWidth, 0, 0),
-                                Vector3D(-1,0,0) ) )
+                                Vector3D(-1,0,0) ), key = dstCompEl )
     # Z side, goal area
     dst = min( dst,
                distanceToPlane( point,
                                 Vector3D(0, 0, self.halfDepth + arena.goal_depth),
-                                Vector3D(0,0,-1) ) )
+                                Vector3D(0,0,-1) ), key = dstCompEl )
     # Z side
     v = Vector2D(point.x, point.y) - \
         Vector2D(arena.goal_width / 2 - arena.goal_top_radius,
@@ -108,19 +214,19 @@ class BallPredictor:
       dst = min( dst,
                  distanceToPlane(point,
                                  Vector3D(0, 0, self.halfDepth),
-                                 Vector3D(0,0,-1) ) )
+                                 Vector3D(0,0,-1) ), key = dstCompEl )
     # Goal X side and Ceiling
     if ( point.z >= self.halfDepth + arena.goal_side_radius ):
       # X side
       dst = min(dst,
                 distanceToPlane(point,
                                 Vector3D(self.halfWidth, 0, 0),
-                                Vector3D(-1,0,0) ) )
+                                Vector3D(-1,0,0) ), key = dstCompEl )
       # Y side
       dst = min(dst,
                 distanceToPlane(point,
                                 Vector3D(0, arena.goal_height, 0),
-                                Vector3D(0,-1,0) ) )
+                                Vector3D(0,-1,0) ), key = dstCompEl )
     # Goal back corners
     if ( point.z > self.halfDepth + arena.goal_depth - arena.bottom_radius ):
       dst = min(dst,
@@ -132,7 +238,7 @@ class BallPredictor:
                                                      arena.bottom_radius,
                                                      arena.goal_height - arena.goal_top_radius),
                                                self.halfDepth + arena.goal_depth - arena.bottom_radius),
-                                      arena.bottom_radius))
+                                      arena.bottom_radius), key = dstCompEl )
     # Corner
     if ( point.x > self.halfWidth - arena.corner_radius and
          point.z > self.halfDepth - arena.corner_radius ):
@@ -141,7 +247,7 @@ class BallPredictor:
                                       Vector3D(self.halfWidth - arena.corner_radius,
                                                point.y,
                                                self.halfDepth - arena.corner_radius),
-                                      arena.corner_radius))
+                                      arena.corner_radius), key = dstCompEl)
     # Goal outer corner
     if ( point.z < self.halfDepth + arena.goal_side_radius ):
       # X side
@@ -151,7 +257,7 @@ class BallPredictor:
                                         Vector3D(self.halfWidth + arena.goal_side_radius,
                                                  point.y,
                                                  self.halfDepth + arena.goal_side_radius),
-                                        arena.goal_side_radius))
+                                        arena.goal_side_radius), key = dstCompEl)
       # Ceiling
       if ( point.y < arena.goal_height + arena.goal_side_radius ):
         dst = min(dst,
@@ -159,7 +265,7 @@ class BallPredictor:
                                         Vector3D(point.x,
                                                  arena.goal_height + arena.goal_side_radius,
                                                  self.halfDepth + arena.goal_side_radius),
-                                        arena.goal_side_radius))
+                                        arena.goal_side_radius), key = dstCompEl)
       # Top corner
       o = Vector2D(self.halfWidth - arena.goal_top_radius,
                    arena.goal_height - arena.goal_top_radius)
@@ -171,7 +277,7 @@ class BallPredictor:
                                         Vector3D(o.x,
                                                  o.z,
                                                  self.halfDepth + arena.goal_side_radius),
-                                        arena.goal_side_radius))
+                                        arena.goal_side_radius), key = dstCompEl)
     # Goal inside top corners
     if ( point.z > self.halfDepth + arena.goal_side_radius and
          point.y > arena.goal_height - arena.goal_top_radius ):
@@ -182,7 +288,7 @@ class BallPredictor:
                                         Vector3D(self.halfWidth - arena.goal_top_radius,
                                                  arena.goal_height - arena.goal_top_radius,
                                                  point.z),
-                                        arena.goal_top_radius))
+                                        arena.goal_top_radius), key = dstCompEl)
       # Z side
       if ( point.z > self.halfDepth + arena.goal_depth - arena.goal_top_radius ):
         dst = min(dst,
@@ -190,7 +296,7 @@ class BallPredictor:
                                         Vector3D(point.x,
                                                  arena.goal_height - arena.goal_top_radius,
                                                  self.halfDepth + arena.goal_depth - arena.goal_top_radius),
-                                        arena.goal_top_radius))
+                                        arena.goal_top_radius), key = dstCompEl)
     # Bottom corners
     if ( point.y < arena.bottom_radius ):
       # X side
@@ -200,7 +306,7 @@ class BallPredictor:
                                         Vector3D(self.halfWidth - arena.bottom_radius,
                                                  arena.bottom_radius,
                                                  point.z),
-                                        arena.bottom_radius))
+                                        arena.bottom_radius), key = dstCompEl)
       # Z side
       if ( point.z > self.halfDepth - arena.bottom_radius and
            point.x >= self.halfWidth + arena.goal_side_radius ):
@@ -209,7 +315,7 @@ class BallPredictor:
                                         Vector3D(point.x,
                                                  arena.bottom_radius,
                                                  self.halfDepth - arena.bottom_radius),
-                                        arena.bottom_radius))
+                                        arena.bottom_radius), key = dstCompEl)
       # Z side (goal)
       if ( point.z > self.halfDepth + arena.goal_depth - arena.bottom_radius ):
         dst = min(dst,
@@ -217,7 +323,7 @@ class BallPredictor:
                                         Vector3D(point.x,
                                                  arena.bottom_radius,
                                                  self.halfDepth + arena.goal_depth - arena.bottom_radius),
-                                         arena.bottom_radius))
+                                         arena.bottom_radius), key = dstCompEl )
       # Goal outer corner
       o = Vector2D(self.halfWidth + arena.goal_side_radius,
                    self.halfDepth + arena.goal_side_radius)
@@ -231,7 +337,7 @@ class BallPredictor:
                                         Vector3D(o.x,
                                                  arena.bottom_radius,
                                                  o.z),
-                                        arena.bottom_radius))
+                                        arena.bottom_radius), key = dstCompEl)
       # X side (goal)
       if ( point.z >= self.halfDepth + arena.goal_side_radius and
            point.x > self.halfWidth - arena.bottom_radius ):
@@ -240,7 +346,7 @@ class BallPredictor:
                                         Vector3D(self.halfWidth - arena.bottom_radius,
                                                  arena.bottom_radius,
                                                  point.z),
-                                        arena.bottom_radius))
+                                        arena.bottom_radius), key = dstCompEl)
       # Corner
       if ( point.x > self.halfWidth - arena.corner_radius and
            point.z > self.halfDepth - arena.corner_radius ):
@@ -256,7 +362,7 @@ class BallPredictor:
                                           Vector3D(o2.x,
                                                    arena.bottom_radius,
                                                    o2.z),
-                                          arena.bottom_radius))
+                                          arena.bottom_radius), key = dstCompEl)
     # Ceiling corners
     if ( point.y > arena.height - arena.top_radius ):
       # X side
@@ -266,15 +372,15 @@ class BallPredictor:
                                         Vector3D(self.halfWidth - arena.top_radius,
                                                  arena.height - arena.top_radius,
                                                  point.z),
-                                        arena.top_radius))
+                                        arena.top_radius), key = dstCompEl)
       # Z side
       if ( point.z > self.halfDepth - arena.top_radius ):
         dst = min(dst,
                   distanceToSphereInner(point,
                                         Vector3D(point.x,
                                                  arena.height - arena.top_radius,
-                                                 self.halfDeoth - arena.top_radius),
-                                        arena.top_radius))
+                                                 self.halfDepth - arena.top_radius),
+                                        arena.top_radius), key = dstCompEl)
       # Corner
       if ( point.x > self.halfWidth - arena.corner_radius and
            point.z > self.halfDepth - arena.corner_radius ):
@@ -289,7 +395,7 @@ class BallPredictor:
                                           Vector3D(o2.x,
                                                    arena.height - arena.top_radius,
                                                    o2.z),
-                                          arena.top_radius))
+                                          arena.top_radius), key = dstCompEl)
     return dst
 
   def distanceToArena(self, point):
@@ -358,13 +464,17 @@ class BallPredictor:
     newBall.velocity_z = ball.velocity_z
     return newBall
 
-  def predictedBall(self, ball, ticks):
+  def predictedBall(self, ball, ticks = 1):
+    # предсказывает положение (и скорость мяча на ticks вперед)
     newBall = copy.copy(ball)
-    tick_split = 1
+    # здесь было дробление тика, и я специально его оставляю в виде комментария
+    # чтобы оно напоминало, что эта штука неэффективна
+    '''
+    tick_split = 10
     dt = self.tik / tick_split
-    ddt = dt/2
-    #for i in range(1, ticks + 1):
-    for i in range(1, (ticks * tick_split + 1)):
+    '''
+    for i in range(1, ticks + 1):
+    #for i in range(1, (ticks * tick_split + 1)):
       ballPt = Vector3D(newBall.x, newBall.y, newBall.z)
       dst, norm = self.distanceToArena(ballPt)
       penetration = self.rules.BALL_RADIUS - dst
@@ -372,12 +482,6 @@ class BallPredictor:
       #pdb.set_trace()
       if ( penetration > 0 ):
         ballPt += norm * penetration
-        # как в доках
-        '''
-        newBall.x = ballPt.x
-        newBall.y = ballPt.y
-        newBall.z = ballPt.z
-        '''
         ballVelocity = Vector3D(newBall.velocity_x,
                                 newBall.velocity_y,
                                 newBall.velocity_z)
@@ -387,17 +491,17 @@ class BallPredictor:
           newBall.velocity_x = ballVelocity.x
           newBall.velocity_y = ballVelocity.y
           newBall.velocity_z = ballVelocity.z
-        # эксперимент
-        newBall.x = ballPt.x + newBall.velocity_x * ddt
-        newBall.y = ballPt.y + newBall.velocity_y * ddt - \
-                    self.rules.GRAVITY * ddt**2 / 2
-        newBall.z = ballPt.z + newBall.velocity_z * ddt
+          
+        newBall.x = ballPt.x + newBall.velocity_x * self.tik
+        newBall.y = ballPt.y + newBall.velocity_y * self.tik - \
+                    self.rules.GRAVITY * self.tik**2 / 2
+        newBall.z = ballPt.z + newBall.velocity_z * self.tik
       else:
-        newBall.x += newBall.velocity_x * dt
-        newBall.y += newBall.velocity_y * dt - \
-                     self.rules.GRAVITY * dt**2 / 2
-        newBall.z += newBall.velocity_z * dt
-        newBall.velocity_y -= self.rules.GRAVITY * dt
+        newBall.x += newBall.velocity_x * self.tik
+        newBall.y += newBall.velocity_y * self.tik - \
+                     self.rules.GRAVITY * self.tik**2 / 2
+        newBall.z += newBall.velocity_z * self.tik
+        newBall.velocity_y -= self.rules.GRAVITY * self.tik
     return newBall
       
 
