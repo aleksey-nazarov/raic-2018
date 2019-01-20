@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import pdb # TODO REMOVE
+
 from model.ball import Ball
 from vectors import Vector2D, Vector3D
 import copy
@@ -38,17 +40,276 @@ def distanceBetweenCenters(entity1, entity2):
                    entity2.y,
                    entity2.z)
   return (rVec2 - rVec1).len()
-  
 
+def clamp(val, limit1, limit2 = None):
+  if ( limit2 == None ):
+    return min(val, limit1)
+  lowLim = min(limit1, limit2)
+  hiLim = max(limit1, limit2)
+  clampedVal = min(val, hiLim)
+  clampedVal = max(clampedVal, lowLim)
+  return clampedVal
+    
+
+def distanceToPlane(point, pointOnPlane, planeNormal):
+  dst = (point - pointOnPlane).scalarMul(planeNormal)
+  return [dst, planeNormal]
+
+def distanceToSphereInner(point, sphereCenter, sphereRadius):
+  dst = sphereRadius - (point - sphereCenter).len()
+  norm = (sphereCenter - point).normalize()
+  return [dst, norm]
+
+def distanceToSphereOuter(point, sphereCenter, sphereRadius):
+  dst = (point - sphereCenter).len() - sphereRadius
+  norm = (point - sphereCenter).normalize()
+  return [dst, norm]
 
 class BallPredictor:
   def __init__(self, rules):
     self.rules = rules
     # вспомогательные константы, позволяющие сократить вычисления
     self.tik = 1 / rules.TICKS_PER_SECOND
+    self.halfWidth = self.rules.arena.width / 2
+    self.halfDepth = self.rules.arena.depth / 2
     # изменение вертикальной скорости за 1 тик при отсутствии столкновений
     self.baseVelYDelta = self.rules.GRAVITY * self.tik
 
+  def distanceToArenaQuarter(self, point):
+    arena = self.rules.arena
+    # Ground
+    dst = distanceToPlane( point,
+                           Vector3D(0,0,0),
+                           Vector3D(0,1,0) )
+    # Ceiling
+    dst = min( dst,
+               distanceToPlane( point,
+                                Vector3D(0, arena.height, 0),
+                                Vector3D(0,-1,0) ) )
+    # X side
+    dst = min( dst,
+               distanceToPlane( point,
+                                Vector3D(self.halfWidth, 0, 0),
+                                Vector3D(-1,0,0) ) )
+    # Z side, goal area
+    dst = min( dst,
+               distanceToPlane( point,
+                                Vector3D(0, 0, self.halfDepth + arena.goal_depth),
+                                Vector3D(0,0,-1) ) )
+    # Z side
+    v = Vector2D(point.x, point.y) - \
+        Vector2D(arena.goal_width / 2 - arena.goal_top_radius,
+                 arena.goal_height - arena.goal_top_radius)
+    if ( point.x >= arena.goal_width / 2 + arena.goal_side_radius or
+         point.y >= arena.goal_height + arena.goal_side_radius or
+         ( v.x > 0 and
+           v.z > 0 and
+           v.len() >= arena.goal_top_radius + arena.goal_side_radius) ):
+      dst = min( dst,
+                 distanceToPlane(point,
+                                 Vector3D(0, 0, self.halfDepth),
+                                 Vector3D(0,0,-1) ) )
+    # Goal X side and Ceiling
+    if ( point.z >= self.halfDepth + arena.goal_side_radius ):
+      # X side
+      dst = min(dst,
+                distanceToPlane(point,
+                                Vector3D(self.halfWidth, 0, 0),
+                                Vector3D(-1,0,0) ) )
+      # Y side
+      dst = min(dst,
+                distanceToPlane(point,
+                                Vector3D(0, arena.goal_height, 0),
+                                Vector3D(0,-1,0) ) )
+    # Goal back corners
+    if ( point.z > self.halfDepth + arena.goal_depth - arena.bottom_radius ):
+      dst = min(dst,
+                distanceToSphereInner(point,
+                                      Vector3D(clamp(point.x,
+                                                     arena.bottom_radius - self.halfWidth,
+                                                     self.halfWidth - arena.bottom_radius),
+                                               clamp(point.y,
+                                                     arena.bottom_radius,
+                                                     arena.goal_height - arena.goal_top_radius),
+                                               self.halfDepth + arena.goal_depth - arena.bottom_radius),
+                                      arena.bottom_radius))
+    # Corner
+    if ( point.x > self.halfWidth - arena.corner_radius and
+         point.z > self.halfDepth - arena.corner_radius ):
+      dst = min(dst,
+                distanceToSphereInner(point,
+                                      Vector3D(self.halfWidth - arena.corner_radius,
+                                               point.y,
+                                               self.halfDepth - arena.corner_radius),
+                                      arena.corner_radius))
+    # Goal outer corner
+    if ( point.z < self.halfDepth + arena.goal_side_radius ):
+      # X side
+      if ( point.x < self.halfWidth + arena.goal_side_radius ):
+        dst = min(dst,
+                  distanceToSphereOuter(point,
+                                        Vector3D(self.halfWidth + arena.goal_side_radius,
+                                                 point.y,
+                                                 self.halfDepth + arena.goal_side_radius),
+                                        arena.goal_side_radius))
+      # Ceiling
+      if ( point.y < arena.goal_height + arena.goal_side_radius ):
+        dst = min(dst,
+                  distanceToSphereOuter(point,
+                                        Vector3D(point.x,
+                                                 arena.goal_height + arena.goal_side_radius,
+                                                 self.halfDepth + arena.goal_side_radius),
+                                        arena.goal_side_radius))
+      # Top corner
+      o = Vector2D(self.halfWidth - arena.goal_top_radius,
+                   arena.goal_height - arena.goal_top_radius)
+      v = Vector2D(point.x, point.y) - o
+      if ( v.x > 0 and v.z > 0 ):
+        o = o + v.normalize() * (arena.goal_top_radius + arena.goal_side_radius)
+        dst = min(dst,
+                  distanceToSphereOuter(point,
+                                        Vector3D(o.x,
+                                                 o.z,
+                                                 self.halfDepth + arena.goal_side_radius),
+                                        arena.goal_side_radius))
+    # Goal inside top corners
+    if ( point.z > self.halfDepth + arena.goal_side_radius and
+         point.y > arena.goal_height - arena.goal_top_radius ):
+      # X side
+      if ( point.x > self.halfWidth - arena.goal_top_radius ):
+        dst = min(dst,
+                  distanceToSphereInner(point,
+                                        Vector3D(self.halfWidth - arena.goal_top_radius,
+                                                 arena.goal_height - arena.goal_top_radius,
+                                                 point.z),
+                                        arena.goal_top_radius))
+      # Z side
+      if ( point.z > self.halfDepth + arena.goal_depth - arena.goal_top_radius ):
+        dst = min(dst,
+                  distanceToSphereInner(point,
+                                        Vector3D(point.x,
+                                                 arena.goal_height - arena.goal_top_radius,
+                                                 self.halfDepth + arena.goal_depth - arena.goal_top_radius),
+                                        arena.goal_top_radius))
+    # Bottom corners
+    if ( point.y < arena.bottom_radius ):
+      # X side
+      if ( point.x > self.halfWidth - arena.bottom_radius ):
+        dst = min(dst,
+                  distanceToSphereInner(point,
+                                        Vector3D(self.halfWidth - arena.bottom_radius,
+                                                 arena.bottom_radius,
+                                                 point.z),
+                                        arena.bottom_radius))
+      # Z side
+      if ( point.z > self.halfDepth - arena.bottom_radius and
+           point.x >= self.halfWidth + arena.goal_side_radius ):
+        dst = min(dst,
+                  distanceToSphereInner(point,
+                                        Vector3D(point.x,
+                                                 arena.bottom_radius,
+                                                 self.halfDepth - arena.bottom_radius),
+                                        arena.bottom_radius))
+      # Z side (goal)
+      if ( point.z > self.halfDepth + arena.goal_depth - arena.bottom_radius ):
+        dst = min(dst,
+                  distanceToSphereInner(point,
+                                        Vector3D(point.x,
+                                                 arena.bottom_radius,
+                                                 self.halfDepth + arena.goal_depth - arena.bottom_radius),
+                                         arena.bottom_radius))
+      # Goal outer corner
+      o = Vector2D(self.halfWidth + arena.goal_side_radius,
+                   self.halfDepth + arena.goal_side_radius)
+      v = Vector2D(point.x, point.z) - o
+      if ( v.x < 0 and
+           v.z < 0 and
+           v.len() < arena.goal_side_radius + arena.bottom_radius ):
+        o = o + v.normalize() * (arena.goal_side_radius + arena.bottom_radius)
+        dst = min(dst,
+                  distanceToSphereInner(point,
+                                        Vector3D(o.x,
+                                                 arena.bottom_radius,
+                                                 o.z),
+                                        arena.bottom_radius))
+      # X side (goal)
+      if ( point.z >= self.halfDepth + arena.goal_side_radius and
+           point.x > self.halfWidth - arena.bottom_radius ):
+        dst = min(dst,
+                  distanceToSphereInner(point,
+                                        Vector3D(self.halfWidth - arena.bottom_radius,
+                                                 arena.bottom_radius,
+                                                 point.z),
+                                        arena.bottom_radius))
+      # Corner
+      if ( point.x > self.halfWidth - arena.corner_radius and
+           point.z > self.halfDepth - arena.corner_radius ):
+        corner_o = Vector2D(self.halfWidth - arena.corner_radius,
+                            self.halfDepth - arena.corner_radius)
+        n = Vector2D(point.x, point.z) - corner_o
+        dist = n.len()
+        if ( dist > arena.corner_radius - arena.bottom_radius ):
+          n = n / dist
+          o2 = corner_o + n * (arena.corner_radius - arena.bottom_radius)
+          dst = min(dst,
+                    distanceToSphereInner(point,
+                                          Vector3D(o2.x,
+                                                   arena.bottom_radius,
+                                                   o2.z),
+                                          arena.bottom_radius))
+    # Ceiling corners
+    if ( point.y > arena.height - arena.top_radius ):
+      # X side
+      if ( point.x > self.halfWidth - arena.top_radius ):
+        dst = min(dst,
+                  distanceToSphereInner(point,
+                                        Vector3D(self.halfWidth - arena.top_radius,
+                                                 arena.height - arena.top_radius,
+                                                 point.z),
+                                        arena.top_radius))
+      # Z side
+      if ( point.z > self.halfDepth - arena.top_radius ):
+        dst = min(dst,
+                  distanceToSphereInner(point,
+                                        Vector3D(point.x,
+                                                 arena.height - arena.top_radius,
+                                                 self.halfDeoth - arena.top_radius),
+                                        arena.top_radius))
+      # Corner
+      if ( point.x > self.halfWidth - arena.corner_radius and
+           point.z > self.halfDepth - arena.corner_radius ):
+        corner_o = Vector2D(self.halfWidth - arena.corner_radius,
+                            self.halfDepth - arena.corner_radius)
+        dv = Vector2D(point.x, point.z) - corner_o
+        if ( dv.len() > arena.corner_radius - arena.top_radius ):
+          n = dv.normalize()
+          o2 = corner_o + n * (arena.corner_radius - arena.top_radius)
+          dst = min(dst,
+                    distanceToSphereInner(point,
+                                          Vector3D(o2.x,
+                                                   arena.height - arena.top_radius,
+                                                   o2.z),
+                                          arena.top_radius))
+    return dst
+
+  def distanceToArena(self, point):
+    negate_x = point.x < 0
+    negate_z = point.z < 0
+    if negate_x:
+      point.x = - point.x
+    if negate_z:
+      point.z = - point.z
+    result = self.distanceToArenaQuarter(point)
+
+    if negate_x:
+      point.x = - point.x
+      result[1].x = - result[1].x 
+    if negate_z:
+      point.z = - point.z
+      result[1].z = - result[1].z 
+
+    return result
+                  
   def nextTickBallPos(self, ball):
     newBall = copy.copy(ball)
     newBall.x = ball.x + ball.velocity_x * self.tik
@@ -97,23 +358,48 @@ class BallPredictor:
     newBall.velocity_z = ball.velocity_z
     return newBall
 
-  def predictedBall(self, ball, timeInterv):
-    #print('call')
-    totalTime = 0.0
+  def predictedBall(self, ball, ticks):
     newBall = copy.copy(ball)
-    while ( totalTime < timeInterv ):
-      #print('iter')
-      ballPrev = copy.copy(newBall)
-      timePrev = totalTime
-      print('b', newBall.y)
-      (timeToColl, newBall) = self.nextCollision(newBall)
-      print('timez {:.4} {:.4}  {:.4}'.format(timeInterv, totalTime, timeToColl))
-      totalTime += timeToColl
-      #print('c', newBall.y)
-      #print('c2', newBall.velocity_y)
-      if ( totalTime > timeInterv ):
-        newBall = self.predictedBallWoColls(ballPrev, timeInterv - timePrev)
+    tick_split = 1
+    dt = self.tik / tick_split
+    ddt = dt/2
+    #for i in range(1, ticks + 1):
+    for i in range(1, (ticks * tick_split + 1)):
+      ballPt = Vector3D(newBall.x, newBall.y, newBall.z)
+      dst, norm = self.distanceToArena(ballPt)
+      penetration = self.rules.BALL_RADIUS - dst
+      #if (ticks == 8):
+      #pdb.set_trace()
+      if ( penetration > 0 ):
+        ballPt += norm * penetration
+        # как в доках
+        '''
+        newBall.x = ballPt.x
+        newBall.y = ballPt.y
+        newBall.z = ballPt.z
+        '''
+        ballVelocity = Vector3D(newBall.velocity_x,
+                                newBall.velocity_y,
+                                newBall.velocity_z)
+        vlcModule = ballVelocity.scalarMul(norm)
+        if ( vlcModule < 0 ):
+          ballVelocity -= norm * (1.0 + self.rules.BALL_ARENA_E) * vlcModule
+          newBall.velocity_x = ballVelocity.x
+          newBall.velocity_y = ballVelocity.y
+          newBall.velocity_z = ballVelocity.z
+        # эксперимент
+        newBall.x = ballPt.x + newBall.velocity_x * ddt
+        newBall.y = ballPt.y + newBall.velocity_y * ddt - \
+                    self.rules.GRAVITY * ddt**2 / 2
+        newBall.z = ballPt.z + newBall.velocity_z * ddt
+      else:
+        newBall.x += newBall.velocity_x * dt
+        newBall.y += newBall.velocity_y * dt - \
+                     self.rules.GRAVITY * dt**2 / 2
+        newBall.z += newBall.velocity_z * dt
+        newBall.velocity_y -= self.rules.GRAVITY * dt
     return newBall
+      
 
   def nextCollision(self, ball):
     # роботов не учитываем, только стены

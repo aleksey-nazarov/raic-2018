@@ -47,7 +47,8 @@ class Vector2D:
 
   # Нормализация вектора (приведение длины к 1)
   def normalize(self):
-      return Vector2D(self.x/self.len(), self.z/self.len())
+      len_ = self.len()
+      return Vector2D(self.x/len_, self.z/len_)
 
 class Vector3D:
   def __init__(self, x=0.0, y=0.0, z=0.0):
@@ -89,9 +90,10 @@ class Vector3D:
 
   # Нормализация вектора (приведение длины к 1)
   def normalize(self):
-      return Vector3D(self.x/self.len(),\
-                      self.y/self.len(),\
-                      self.z/self.len())
+      len_ = self.len()
+      return Vector3D(self.x/len_,\
+                      self.y/len_,\
+                      self.z/len_)
 
   # скалярное умножение векторов
   def scalarMul(self, oth):

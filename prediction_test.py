@@ -29,20 +29,33 @@ rules = Rules(rulesDct)
 
 ballPred = BallPredictor(rules)
 
-basicMoment = gameLog[155]
+#basicMoment = gameLog[106]
+basicMoment = gameLog[81]
 basicBall = ballFromLog(basicMoment['ball'])
 
-for e in gameLog[164:165]:
-#for e in gameLog[:4]:
-  timeInterv = (e['current_tick'] - basicMoment['current_tick']) * ballPred.tik
+for e in gameLog[245:390]:
+##for e in [gameLog[196],
+##          gameLog[260],
+##          gameLog[270],
+##          gameLog[273],
+##          gameLog[276]]:
   ball = ballFromLog(e['ball'])
-  #print('a', basicBall.y)
-  predictedBall = ballPred.predictedBall(basicBall, timeInterv)
+  ticks = e['current_tick'] - basicMoment['current_tick']
+  predictedBall = ballPred.predictedBall(basicBall, ticks)
   delta = distanceBetweenCenters(ball, predictedBall)
   print(e['current_tick'], delta)
-  print('ball_xs',predictedBall.x, ball.x)
-  print('ball_ys',predictedBall.y, ball.y)
-  print('ball_zs',predictedBall.z, ball.z)
+  #print(ball.x, ball.y, ball.z)
+  #print(predictedBall.x, predictedBall.y, predictedBall.z)
+
+  
+  '''
+  ball = ballFromLog(e['ball'])
+  pt = Vector3D(ball.x, ball.y, ball.z)
+  dst, norm = ballPred.distanceToArena(pt)
+  print('  == ', e['current_tick'], ' ==')
+  print(dst, '   ', norm.x, norm.y, norm.z)
+  print(ball.x, ball.y, ball.z)
+  '''
 
 
 '''
