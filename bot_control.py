@@ -26,33 +26,36 @@ class BotController:
   def preventWallCollision(self, bot, action):
     maxX = self.rules.arena.width / 2 - self.rules.arena.bottom_radius \
            - self.rules.BALL_RADIUS
-    maxZ = self.rules.arena.depth / 2 - self.rules.arena.bottom_radius \
-           - self.rules.BALL_RADIUS
     maxGoalX = self.rules.arena.goal_width / 2 - self.rules.BALL_RADIUS
+    if (abs(bot.x) < maxGoalX):
+      maxZ = self.rules.arena.depth / 2 + self.rules.arena.goal_depth - \
+             self.rules.arena.bottom_radius - \
+             self.rules.BALL_RADIUS
+    else:
+      maxZ = self.rules.arena.depth / 2 - self.rules.arena.bottom_radius - \
+             self.rules.BALL_RADIUS
+    
+    sameSignX = bot.x * bot. velocity_x # совпадение знаков координаты и скорости
+    if ( sameSignX ):
+      dstX = maxX - abs(bot.x)
+      if (dstX <= 0 ):
+        maxVelX = 0
+      else:
+        maxVelX = (2 * dstX * self.rules.ROBOT_ACCELERATION) ** 0.5
+      if ( abs(bot.velocity_x) > maxVelX ):
+        signVelX = -1.0 if bot.velocity_x > 0 else -1.0
+        action.target_velocity_x = signVelX * maxVelX
 
-    dstX = min([abs(maxX - bot.x), abs( - maxX - bot.x)])
-    maxVelX = (2 * dstX * self.rules.ROBOT_ACCELERATION) ** 0.5
-
-    if ( bot.x > 0 and
-         bot.velocity_x > maxVelX ):
-      action.target_velocity_x = min([action.target_velocity_x, maxVelX])
-
-    if ( bot.x < 0 and
-         bot.velocity_x < - maxVelX ):
-      action.target_velocity_x = max([action.target_velocity_x, - maxVelX])
-
-    dstZ = min([abs(maxZ - bot.z), abs( - maxZ - bot.z)])
-    maxVelZ = (2 * dstZ * self.rules.ROBOT_ACCELERATION) ** 0.5
-
-    if ( bot.z > 0 and
-         abs(bot.x) > maxGoalX and
-         bot.velocity_z > maxVelZ ):
-      action.target_velocity_z = min([action.target_velocity_z, maxVelZ])
-
-    if ( bot.z < 0 and
-         abs(bot.x) > maxGoalX and
-         bot.velocity_z < - maxVelZ ):
-      action.target_velocity_z = max([action.target_velocity_z, - maxVelZ])
+    sameSignZ = bot.z * bot. velocity_z # совпадение знаков координаты и скорости
+    if ( sameSignZ ):
+      dstZ = maxZ - abs(bot.z)
+      if (dstZ <= 0 ):
+        maxVelZ = 0
+      else:
+        maxVelZ = (2 * dstZ * self.rules.ROBOT_ACCELERATION) ** 0.5
+      if ( abs(bot.velocity_z) > maxVelZ ):
+        signVelZ = -1.0 if bot.velocity_z > 0 else -1.0
+        action.target_velocity_z = signVelZ * maxVelZ
 
   def botToPoint(self, targetPoint, bot, action):
     # TODO добавить параметров
@@ -135,6 +138,26 @@ class BotController:
       return True
     else:
       return False
+
+  def approxTimeToPoint(self, targetPoint, game, bot):
+    botVec = Vector2D(bot.x, bot.z)
+    vecToTarget = targetPoint - botVec
+
+    # составляющие скорости мяча: проекция скорости на вектор, направленный
+    # на целевую точку, и перпендикулярная ей составляющая
+    botVelocity = Vector2D(bot.velocity_x, bot.velocity_z)
+    botVelTgt = botVelocity.projectOn(vecToTarget)
+    botVelOrto = botVelocity - botVelTgt
+    velTgtScalar = botVelocity.scalarPojectOn(vecToTarget)
+    velOrtoAbs = botVelOrto.len()
+    # время, за которое перпендикулярная составляющая скорости и составляющая,
+    # направленная ОТ цели (если есть), достигнут нулевого значения
+    tOrto = velOrtoAbs / self.rules.ROBOT_ACCELERATION
+    if (velTgtScalar < 0):
+      tTgt = abs(velTgtScalar) / self.rules.ROBOT_ACCELERATION
+    else:
+      tTgt = 0.0
+    
       
   def getAimPoint(self, game):
     # точка в воротах противника, траектория полета мяча к которой 

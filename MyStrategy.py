@@ -126,6 +126,10 @@ def init(me, rules, game):
     # ( при, как нетрудно догадаться,  прыжке с максимальной начальной скоростью)
     miscInfo.maxFlightHalfTime = flT
 
+def initTick(game):
+  global ballPred
+  ballPred.update(game)
+
 def setRoles(game):
   if ( game.current_tick != miscInfo.currentTick ): # новый тик
     #miscInfo.ballPrevTick = game.ball
@@ -154,18 +158,96 @@ def setRoles(game):
       else:
         miscInfo.roles[myBots[i].id] = 'defender'
 
+def doDefend(me, game, action):
+  prTrajectory = ballPred.getPredictedTrajectory()
+  # если все спокойно, стоять в центре ворот
+  tgtPt = Vector2D(0.0,
+                   -(rules.arena.depth / 2.0) )
+
+  defAreaWidth = miscInfo.gameRules.arena.goal_width
+  defAreaDepth = 4.0 # эмпирически, как и всегда ((
+  defAreaZeroZ = - (rules.arena.depth / 2.0)
+  defAreaZ = defAreaZeroZ + defAreaDepth
+
+  # если мяч уже на площадке перед воротами
+  if ( abs(game.ball.x) < defAreaWidth and
+       game.ball.y < defAreaZ ):
+    ticksLeft = b.tick - game.currentTick
+
+  # если мяч в ближайшее время попадает на площадку перед воротами
+  for b in prTrajectory:
+    if ( abs(b.x) < defAreaWidth and
+         b.y < defAreaZ ):
+      ticksLeft = b.tick - game.currentTick
+
+
+  
+# берем из quick_start
+      EPS = 1e-5
+      # Будем стоять посередине наших ворот
+      target_pos = Vector2D(
+          0.0, -(rules.arena.depth / 2.0) + rules.arena.bottom_radius)
+      # Причем, если мяч движется в сторону наших ворот
+      if game.ball.velocity_z < -EPS:
+          # Найдем время и место, в котором мяч пересечет линию ворот
+          t = (target_pos.z - game.ball.z) / game.ball.velocity_z
+          x = game.ball.x + game.ball.velocity_x * t
+          # Если это место - внутри ворот
+          if abs(x) < rules.arena.goal_width / 2.0:
+              # То пойдем защищать его
+              target_pos.x = x
+              target_pos.z = -(rules.arena.depth / 2.0) - 2
+
+      if (distanceBetweenCenters(game.ball, me) < rules.arena.goal_width / 2.0):
+        target_pos.x = game.ball.x
+        target_pos.z = game.ball.z
+                
+      # Установка нужных полей для желаемого действия
+      target_velocity = Vector2D(
+          target_pos.x - me.x, target_pos.z - me.z) * rules.ROBOT_MAX_GROUND_SPEED
+
+      action.target_velocity_x = target_velocity.x
+      action.target_velocity_z = target_velocity.z
+      dist_to_ball = ((me.x - game.ball.x) ** 2
+                        + (me.y - game.ball.y) ** 2
+                        + (me.z - game.ball.z) ** 2
+                        ) ** 0.5
+
+        # Если при прыжке произойдет столкновение с мячом, и мы находимся
+        # с той же стороны от мяча, что и наши ворота, прыгнем, тем самым
+        # ударив по мячу сильнее в сторону противника
+      dst = ( Vector2D(ball.x, ball.y) - Vector2D(me.x, me.y) ).len()#
+      t = dst / ( Vector2D(ball.x, ball.y) - Vector2D(me.x, me.y) )#
+      jump =( (dist_to_ball < rules.BALL_RADIUS +
+              rules.ROBOT_MAX_RADIUS and me.z < game.ball.z) or
+              () )
+      action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED if jump else 0.0
+            
+
+
+
+  
+
 class MyStrategy:
   def custom_rendering(self):
     return ""
       
   def act(self, me, rules, game, action):
     init(me, rules, game) # runs once
+    initTick(game) #runs once per tick
     setRoles(game) #runs once per tick
-    #print(miscInfo.roles)
 
-    #print(game.current_tick )
-    #if (game.current_tick == 50):
-      #exit()
+    if ( miscInfo.roles[me.id] == 'attacker' ):
+      pass
+    else: # ( miscInfo.roles[me.id] == 'defender' )
+      doDefend(me, game, action)
+
+
+    
+
+
+
+    
     '''
     #rVec = Vector2D(miscInfo.reqX, miscInfo.reqZ)
     rVec = Vector2D( game.ball.x, game.ball.z )

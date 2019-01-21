@@ -53,6 +53,27 @@ class Vector2D:
       len_ = self.len()
       return Vector2D(self.x/len_, self.z/len_)
 
+  # скалярное умножение векторов
+  def scalarMul(self, oth):
+    return self.x * oth.x + self.z * oth.z
+
+  # проекция вектора на вектор oth
+  def projectOn(self, oth):
+    selfLen = self.len()
+    othLen = oth.len()
+    cosin = (self.scalarMul(oth)) / (selfLen * othLen )
+    projLen = selfLen * cosin
+    proj = oth.normalize() * projLen
+    return proj
+
+  # проекция вектора на вектор oth (скалярное значение)
+  def scalarProjectOn(self, oth):
+    selfLen = self.len()
+    othLen = oth.len()
+    cosin = (self.scalarMul(oth)) / (selfLen * othLen )
+    projLen = selfLen * cosin
+    return projLen
+
 class Vector3D:
   def __init__(self, x=0.0, y=0.0, z=0.0):
       self.x = x
