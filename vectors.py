@@ -61,7 +61,10 @@ class Vector2D:
   def projectOn(self, oth):
     selfLen = self.len()
     othLen = oth.len()
-    cosin = (self.scalarMul(oth)) / (selfLen * othLen )
+    try:
+      cosin = (self.scalarMul(oth)) / (selfLen * othLen )
+    except ZeroDivisionError:
+      return Vector2D(0,0)
     projLen = selfLen * cosin
     proj = oth.normalize() * projLen
     return proj
@@ -70,7 +73,10 @@ class Vector2D:
   def scalarProjectOn(self, oth):
     selfLen = self.len()
     othLen = oth.len()
-    cosin = (self.scalarMul(oth)) / (selfLen * othLen )
+    try:
+      cosin = (self.scalarMul(oth)) / (selfLen * othLen )
+    except ZeroDivisionError:
+      return 0
     projLen = selfLen * cosin
     return projLen
 
@@ -127,7 +133,10 @@ class Vector3D:
   def projectOn(self, oth):
     selfLen = self.len()
     othLen = oth.len()
-    cosin = (self.scalarMul(oth)) / (selfLen * othLen )
+    try:
+      cosin = (self.scalarMul(oth)) / (selfLen * othLen )
+    except ZeroDivisionError:
+      return Vector3D(0,0,0)
     projLen = selfLen * cosin
     proj = oth.normalize() * projLen
     return proj

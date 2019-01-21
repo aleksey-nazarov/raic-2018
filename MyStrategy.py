@@ -104,6 +104,7 @@ def init(me, rules, game):
     miscInfo.initDone = True
     miscInfo.aimPoint = getAimPoint(rules)
     miscInfo.currentTick = -1
+    miscInfo.tik = 1 / rules.TICKS_PER_SECOND
     # TODO REMOVE
     miscInfo.playBotId = me.id
     miscInfo.reqX = 10.0 # me.z * 1.5
@@ -141,6 +142,12 @@ def setRoles(game):
         #miscInfo.roles[b.id] = None
         myBots.append(b)
 
+    ## TODO REMOVE
+    miscInfo.roles[1] = 'attacker'
+    miscInfo.roles[2] = 'defender'
+    return
+    ##  ^^ TODO REMOVE ^^
+
     for bot in myBots:
       # TODO очень упрощенно пока
       bot.dstToBall = ( Vector3D(bot.x, bot.y, bot.z) - \
@@ -162,66 +169,80 @@ def doDefend(me, game, action):
   prTrajectory = ballPred.getPredictedTrajectory()
   # если все спокойно, стоять в центре ворот
   tgtPt = Vector2D(0.0,
-                   -(rules.arena.depth / 2.0) )
+                   -(miscInfo.gameRules.arena.depth / 2.0) )
 
   defAreaWidth = miscInfo.gameRules.arena.goal_width
   defAreaDepth = 4.0 # эмпирически, как и всегда ((
-  defAreaZeroZ = - (rules.arena.depth / 2.0)
+  defAreaZeroZ = - (miscInfo.gameRules.arena.depth / 2.0)
   defAreaZ = defAreaZeroZ + defAreaDepth
 
   # если мяч уже на площадке перед воротами
+  '''
   if ( abs(game.ball.x) < defAreaWidth and
        game.ball.y < defAreaZ ):
     ticksLeft = b.tick - game.currentTick
+  '''
+
+  reachableGroundPoint = None
+  reachablePoint = None
+  goodHeight = miscInfo.gameRules.BALL_RADIUS + \
+               miscInfo.gameRules.ROBOT_MIN_RADIUS
+  # max reachable BALL CENTER height
+  maxRH = miscInfo.reachableZ + \
+          miscInfo.gameRules.ROBOT_MIN_RADIUS + \
+          miscInfo.gameRules.BALL_RADIUS
 
   # если мяч в ближайшее время попадает на площадку перед воротами
   for b in prTrajectory:
+    if ( b.z < (- miscInfo.gameRules.arena.depth / 2) + \
+         miscInfo.gameRules.BALL_RADIUS ):
+      # oh fuck
+      break
     if ( abs(b.x) < defAreaWidth and
-         b.y < defAreaZ ):
-      ticksLeft = b.tick - game.currentTick
+         b.z < defAreaZ ):
+      ticksLeft = b.tick - game.current_tick
+      bPt = Vector2D(b.x, b.z)
+      ticksNeed = botControl.approxTimeToPoint(bPt, game, me)
+      if (ticksNeed < ticksLeft and
+          b.y < goodHeight):
+        if (reachableGroundPoint == None):
+          reachableGroundPoint = b
+        else:
+          if (b.y < reachableGroundPoint.y):
+            reachableGroundPoint = b
+      if (ticksNeed < ticksLeft and
+          b.y >= goodHeight and
+          b.y <= maxRH ):
+        if (reachablePoint == None):
+          reachablePoint = b
+        else:
+          if (b.y < reachablePoint.y):
+            reachablePoint = b
+            
+  if ( reachableGroundPoint != None ):
+    tgtPt = Vector2D(reachableGroundPoint.x, reachableGroundPoint.z - 1.0)
+    ticksLeft = reachableGroundPoint.tick - game.current_tick
+    ticksNeed = botControl.approxTimeToPoint(tgtPt, game, me) / miscInfo.tik
+    if ( ticksLeft - ticksNeed <= 0 ):
+      botControl.botToPoint(tgtPt, me, action)
+      return
+
+  # TODO reachablePoint с прыжком
+  if ( reachablePoint != None ):
+    tgtPt = Vector2D(reachablePoint.x, reachablePoint.z - 1.0)
+    ticksLeft = reachablePoint.tick - game.current_tick
+    ticksNeedToRoll = botControl.approxTimeToPoint(tgtPt, game, me)
+    ticksNeedToJump = botControl.calculateJump(reachablePoint.y)
 
 
-  
-# берем из quick_start
-      EPS = 1e-5
-      # Будем стоять посередине наших ворот
-      target_pos = Vector2D(
-          0.0, -(rules.arena.depth / 2.0) + rules.arena.bottom_radius)
-      # Причем, если мяч движется в сторону наших ворот
-      if game.ball.velocity_z < -EPS:
-          # Найдем время и место, в котором мяч пересечет линию ворот
-          t = (target_pos.z - game.ball.z) / game.ball.velocity_z
-          x = game.ball.x + game.ball.velocity_x * t
-          # Если это место - внутри ворот
-          if abs(x) < rules.arena.goal_width / 2.0:
-              # То пойдем защищать его
-              target_pos.x = x
-              target_pos.z = -(rules.arena.depth / 2.0) - 2
+  # TODO если мяч нас обогнал
+  if (me.z > game.ball.z):
+    tgtPt = Vector2D(0.0,
+                   -(miscInfo.gameRules.arena.depth / 2.0) )
 
-      if (distanceBetweenCenters(game.ball, me) < rules.arena.goal_width / 2.0):
-        target_pos.x = game.ball.x
-        target_pos.z = game.ball.z
-                
-      # Установка нужных полей для желаемого действия
-      target_velocity = Vector2D(
-          target_pos.x - me.x, target_pos.z - me.z) * rules.ROBOT_MAX_GROUND_SPEED
+  botControl.botToPointAndStop(tgtPt, me, action)
 
-      action.target_velocity_x = target_velocity.x
-      action.target_velocity_z = target_velocity.z
-      dist_to_ball = ((me.x - game.ball.x) ** 2
-                        + (me.y - game.ball.y) ** 2
-                        + (me.z - game.ball.z) ** 2
-                        ) ** 0.5
 
-        # Если при прыжке произойдет столкновение с мячом, и мы находимся
-        # с той же стороны от мяча, что и наши ворота, прыгнем, тем самым
-        # ударив по мячу сильнее в сторону противника
-      dst = ( Vector2D(ball.x, ball.y) - Vector2D(me.x, me.y) ).len()#
-      t = dst / ( Vector2D(ball.x, ball.y) - Vector2D(me.x, me.y) )#
-      jump =( (dist_to_ball < rules.BALL_RADIUS +
-              rules.ROBOT_MAX_RADIUS and me.z < game.ball.z) or
-              () )
-      action.jump_speed = rules.ROBOT_MAX_JUMP_SPEED if jump else 0.0
             
 
 
@@ -238,9 +259,27 @@ class MyStrategy:
     setRoles(game) #runs once per tick
 
     if ( miscInfo.roles[me.id] == 'attacker' ):
-      pass
+      # TODO временно так
+      if ( me.z > game.ball.z ):
+        pursuePt = getPursuePoint(me, game)
+        pursuePt2D = Vector2D(pursuePt.x, pursuePt.z)
+        #botToPointAndKick(pursuePt2D, me, action, rules)
+        botControl.botToPoint(pursuePt2D, me, action)
+        botControl.preventWallCollision(me, action)
+      else:
+        strikePoint = botControl.getStrikePoint(game)
+        strikePt2D = Vector2D(strikePoint.x, strikePoint.z)
+        botControl.botToPoint(strikePt2D, me, action)
+
+        botControl.preventWallCollision(me, action)
+
+        # botToPointAndKick не обрабатывает прыжки!
+        #botControl.assignJump(me, ballPred, game, action)
     else: # ( miscInfo.roles[me.id] == 'defender' )
       doDefend(me, game, action)
+
+
+    return
 
 
     

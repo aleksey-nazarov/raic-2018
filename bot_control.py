@@ -145,19 +145,40 @@ class BotController:
 
     # составляющие скорости мяча: проекция скорости на вектор, направленный
     # на целевую точку, и перпендикулярная ей составляющая
+    # ( работаем только с направленной на точку )
     botVelocity = Vector2D(bot.velocity_x, bot.velocity_z)
-    botVelTgt = botVelocity.projectOn(vecToTarget)
-    botVelOrto = botVelocity - botVelTgt
-    velTgtScalar = botVelocity.scalarPojectOn(vecToTarget)
-    velOrtoAbs = botVelOrto.len()
-    # время, за которое перпендикулярная составляющая скорости и составляющая,
-    # направленная ОТ цели (если есть), достигнут нулевого значения
-    tOrto = velOrtoAbs / self.rules.ROBOT_ACCELERATION
-    if (velTgtScalar < 0):
-      tTgt = abs(velTgtScalar) / self.rules.ROBOT_ACCELERATION
-    else:
-      tTgt = 0.0
+    velTgtScalar = botVelocity.scalarProjectOn(vecToTarget)
+
+    tToTarget = 0.0
+    # время разворота
+    if ( velTgtScalar < 0 ):
+      tToTarget += 2 * velTgtScalar / self.rules.ROBOT_ACCELERATION
+      velTgtScalar = - velTgtScalar
+    dst = vecToTarget.len()
     
+    # время разгона
+    tAccel = (self.rules.ROBOT_MAX_GROUND_SPEED - velTgtScalar) / \
+             self.rules.ROBOT_ACCELERATION
+    sAccel = velTgtScalar * tAccel + \
+             self.rules.ROBOT_ACCELERATION * tAccel  ** 2 / 2
+    if ( sAccel < dst ):
+    	tToTarget += tAccel + \
+                     (dst - sAccel) / self.rules.ROBOT_MAX_GROUND_SPEED
+    else:
+      # придется потиково, ничего не поделать
+      tik = 1 / self.rules.TICKS_PER_SECOND
+      auxVelocity = self.rules.ROBOT_MAX_GROUND_SPEED
+      while (sAccel < dst):
+        auxVelocity -= tik * self.rules.ROBOT_ACCELERATION
+        ds = auxVelocity * tik + \
+             self.rules.ROBOT_ACCELERATION * tik ** 2 / 2
+        sAccel -= ds
+        tAccel -= tik
+        if (tAccel < 0):
+          print('approxTimeToPoint() unexpected behavior')
+          return tik
+      tToTarget = tAccel
+    return tToTarget
       
   def getAimPoint(self, game):
     # точка в воротах противника, траектория полета мяча к которой 
