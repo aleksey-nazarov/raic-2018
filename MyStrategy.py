@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from vectors import Vector2D, Vector3D
-from aux_scratch import botToPointAndStop
+#from aux_scratch import botToPointAndStop
 from prediction import BallPredictor, distanceBetweenCenters
 from bot_control import BotController
 import copy
@@ -171,18 +171,10 @@ def doDefend(me, game, action):
                    -(miscInfo.gameRules.arena.depth / 2.0) - 1.5 )
 
   defAreaWidth = miscInfo.gameRules.arena.goal_width
-  defAreaDepth = 4.0 # эмпирически, как и всегда ((
+  defAreaDepth = 6.0 # эмпирически, как и всегда ((
   defAreaZeroZ = - (miscInfo.gameRules.arena.depth / 2.0)
   defAreaZ = defAreaZeroZ + defAreaDepth
 
-  # если мяч уже на площадке перед воротами
-  '''
-  if ( abs(game.ball.x) < defAreaWidth and
-       game.ball.y < defAreaZ ):
-    ticksLeft = b.tick - game.currentTick
-  '''
-
-  #reachableGroundPoint = None
   interceptionPoint = None
   goodHeight = miscInfo.gameRules.BALL_RADIUS + \
                miscInfo.gameRules.ROBOT_MIN_RADIUS - 0.5
@@ -191,79 +183,89 @@ def doDefend(me, game, action):
           miscInfo.gameRules.ROBOT_MIN_RADIUS + \
           miscInfo.gameRules.BALL_RADIUS
 
-  ballNearGoal = False
-  goalAlert = False
+  lineCrossX = None
 
   # если мяч в ближайшее время попадает на площадку перед воротами
   for b in prTrajectory:
     if ( b.z < (- miscInfo.gameRules.arena.depth / 2) - \
          miscInfo.gameRules.BALL_RADIUS ):
-      # oh fuck
-      goalAlert = True
+      lineCrossX = b.x
       break
     if ( abs(b.x) < defAreaWidth / 2 and
          b.z < defAreaZ ):
-      ballNearGoal = True
+      #ballNearGoal = True
       #print(game.current_tick, ' detected')
       ticksLeft = b.tick - game.current_tick
       bPt = Vector2D(b.x, b.z)
-      ticksNeed = int(botControl.approxTimeToPoint(bPt, game, me) / botControl.tik)
+      ticksNeed = botControl.approxTimeToPoint(bPt, game, me)
+      if (ticksNeed < 0):
+        pdb.set_trace()
       ticksNeedToJump, v0 = \
         botControl.calculateJump(b.y - \
                                  miscInfo.gameRules.BALL_RADIUS - \
                                  miscInfo.gameRules.ROBOT_MIN_RADIUS)
       if (ticksNeedToJump == 0 and
-          b.y <= goodHeight):
+          interceptionPoint == None):
         interceptionPoint = b
-        break
-      #print(ticksNeed, ticksNeedToJump, ticksLeft)
-      #pdb.set_trace()
+        #break
+      '''
       if (ticksNeed + ticksNeedToJump < ticksLeft):
         if (interceptionPoint == None):
           interceptionPoint = b
         else:
           if (b.y < interceptionPoint.y):
             interceptionPoint = b
+      '''
 
-  #print(reachableGroundPoint, reachablePoint)
-  #if (ballNearGoal == True):
-    #pdb.set_trace()
+  # TODO REMOVE
+  '''
+  readyPt = copy.copy(waitPt)
+  if (goalAlert == True):
+    readyPt.x = lineCrossX
+    print('cross', lineCrossX)
+  botControl.botToPointAndStop(readyPt, me, action)
 
-  if (goalAlert == True and interceptionPoint == None):
+  return
+  '''
+
+  if (lineCrossX != None and interceptionPoint == None):
     print(game.current_tick, ' FUCK, GOAL IMMINENT')
 
   # прочие случаи
   if (me.z > game.ball.z or 
       interceptionPoint == None ):
     botControl.botToPointAndStop(waitPt, me, action)
-
-  '''            
-  if ( reachableGroundPoint != None ):
-    tgtPt = Vector2D(reachableGroundPoint.x, reachableGroundPoint.z - 1.0)
-    ticksLeft = reachableGroundPoint.tick - game.current_tick
-    ticksNeed = int(botControl.approxTimeToPoint(tgtPt, game, me) / miscInfo.tik)
-    #if ( ticksLeft - ticksNeed <= 0 ):
-    botControl.botToPoint(tgtPt, me, action)
-    return
-  '''
-
-  # reachablePoint с прыжком
   
   if ( interceptionPoint != None ):
     tgtPt = Vector2D(interceptionPoint.x, interceptionPoint.z - 1.0)
     ticksLeft = interceptionPoint.tick - game.current_tick
     ticksNeedToRoll = botControl.approxTimeToPoint(tgtPt, game, me)
+    h = min(interceptionPoint.y, miscInfo.reachableZ)
     ticksNeedToJump, v0 = \
-      botControl.calculateJump(interceptionPoint.y - \
-                               miscInfo.gameRules.BALL_RADIUS - \
-                               miscInfo.gameRules.ROBOT_MIN_RADIUS)
-    print(game.current_tick, ticksNeedToJump)
-    if ( ticksLeft - ticksNeed - ticksNeedToJump <= 0 ):
-      botControl.botToPoint(tgtPt, me, action)
+      botControl.calculateJump(h)
+
+    print(game.current_tick, ticksNeedToJump, ticksNeedToRoll, ticksLeft)
+    if ( ticksLeft - ticksNeedToRoll - ticksNeedToJump <= 0 ):
+      #botControl.botToPoint(tgtPt, me, action)
+      botControl.botToPointAndStop(tgtPt, me, action)
     else:
-      botControl.botToPointAndStop(waitPt, me, action)
-    if ( ticksLeft - ticksNeedToJump <= 0 ):
+      readyPt = copy.copy(waitPt)
+      if (lineCrossX != None):
+        readyPt.x = lineCrossX
+      botControl.botToPointAndStop(readyPt, me, action)
+      #botControl.botToPointAndStop(waitPt, me, action)
+    '''
+    if ( ticksLeft - ticksNeedToJump <= 0 and
+         me.touch == True ):
       action.jump_speed = v0
+    '''
+    kickBall = ( Vector3D(game.ball.x, game.ball.y, game.ball.z) - \
+                 Vector3D(me.x, me.y, me.z) ).len() <= \
+               ( miscInfo.gameRules.ROBOT_MAX_RADIUS + \
+                 miscInfo.gameRules.BALL_RADIUS ) and \
+               me.z < game.ball.z    
+    if ( kickBall ):
+      action.jump_speed = miscInfo.gameRules.ROBOT_MAX_JUMP_SPEED
     return
   
 
@@ -286,7 +288,11 @@ class MyStrategy:
     setRoles(game) #runs once per tick
 
     if ( miscInfo.roles[me.id] == 'attacker' ):
+      tgtPt = Vector2D(-27 if me.x < 0 else 27,
+                       25)
+      botControl.botToPointAndStop(tgtPt, me, action)
       # TODO временно так
+      '''
       if ( me.z > game.ball.z ):
         pursuePt = getPursuePoint(me, game)
         pursuePt2D = Vector2D(pursuePt.x, pursuePt.z)
@@ -302,6 +308,7 @@ class MyStrategy:
 
         # botToPointAndKick не обрабатывает прыжки!
         #botControl.assignJump(me, ballPred, game, action)
+      '''
     else: # ( miscInfo.roles[me.id] == 'defender' )
       doDefend(me, game, action)
 

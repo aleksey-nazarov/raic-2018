@@ -141,7 +141,7 @@ class BotController:
     else:
       return False
 
-  def approxTimeToPoint(self, targetPoint, game, bot):
+  def approxTimeToPoint(self, targetPoint, game, bot, timeAsTicks = True):
     botVec = Vector2D(bot.x, bot.z)
     vecToTarget = targetPoint - botVec
 
@@ -154,7 +154,7 @@ class BotController:
     tToTarget = 0.0
     # время разворота
     if ( velTgtScalar < 0 ):
-      tToTarget += 2 * velTgtScalar / self.rules.ROBOT_ACCELERATION
+      tToTarget += 2 * abs(velTgtScalar) / self.rules.ROBOT_ACCELERATION
       velTgtScalar = - velTgtScalar
     dst = vecToTarget.len()
     
@@ -163,6 +163,7 @@ class BotController:
              self.rules.ROBOT_ACCELERATION
     sAccel = velTgtScalar * tAccel + \
              self.rules.ROBOT_ACCELERATION * tAccel  ** 2 / 2
+    #pdb.set_trace()
     if ( sAccel < dst ):
     	tToTarget += tAccel + \
                      (dst - sAccel) / self.rules.ROBOT_MAX_GROUND_SPEED
@@ -178,9 +179,12 @@ class BotController:
         tAccel -= tik
         if (tAccel < 0):
           print('approxTimeToPoint() unexpected behavior')
-          return tik
+          return tik if ( timeAsTicks == False ) else 1
       tToTarget = tAccel
-    return tToTarget
+    if (timeAsTicks == True):
+      return round(tToTarget / self.tik)
+    else:
+      return tToTarget
       
   def getAimPoint(self, game):
     # точка в воротах противника, траектория полета мяча к которой 
