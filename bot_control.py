@@ -1,6 +1,8 @@
 from vectors import Vector2D, Vector3D
 import copy
 
+import pdb
+
 ALLOWED_POSITION_DIVERGENCE = 0.01
 ALLOWED_VELOCITY_DIVERGENCE = 0.001
 
@@ -256,6 +258,24 @@ class BotController:
 
     return Vector3D(xs, ys, zs)
 
+  def calculateJump(self, height, timeAsTicks = True):
+    # для переданной высоты прыжка возвращает время, требуемое на достижение
+    # этой высоты, и начальную скорость прыжка
+    # если слишком высоко - возвращает неправдоподобно большие значения
+    if ( height > self.maxReachableZ ):
+      t = 4.0
+      if (timeAsTicks == True):
+        t = round(t / self.tik)
+      return (t, 200)
+    jHeight = height - self.rules.ROBOT_MIN_RADIUS
+    if (jHeight <= self.rules.ROBOT_MIN_RADIUS):
+      return (0, 0.0)
+    t = (2 * jHeight / self.rules.GRAVITY) ** 0.5
+    v0 = t * self.rules.GRAVITY
+    if (timeAsTicks == True):
+      t = round(t / self.tik)
+    return (t, v0)
+  
   def assignJump(self, bot, ballPred, game, action):
     mfhTime = self.maxFlightHalfTime
     count = int(mfhTime / 0.01) # точность моделирования
