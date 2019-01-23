@@ -182,6 +182,23 @@ def doAttack(bot, game, action):
 
   prTrajectory = ballPred.getPredictedTrajectory()
 
+  # da cannon shootz!
+  kickBall = ( bot.z > miscInfo.gameRules.arena.depth / 2 - \
+                       miscInfo.gameRules.arena.corner_radius and
+               abs(bot.x) < miscInfo.gameRules.arena.goal_width / 2 and
+               ( Vector3D(game.ball.x, game.ball.y, game.ball.z) - \
+                 Vector3D(bot.x, bot.y, bot.z) ).len() <= \
+               ( miscInfo.gameRules.ROBOT_MAX_RADIUS + \
+                 miscInfo.gameRules.BALL_RADIUS ) and
+               bot.z < game.ball.z and
+               game.ball.z - bot.z > 2.0 and
+               abs(bot.x - game.ball.x) < 1.0 )
+  
+  
+  if ( kickBall ):
+    #pdb.set_trace()
+    action.jump_speed = miscInfo.gameRules.ROBOT_MAX_JUMP_SPEED
+
   # частный случай - робот вблизи мяча, который катится (не прыгает)
   flatTrajectory = True
   for b in prTrajectory[:30]:
@@ -196,8 +213,8 @@ def doAttack(bot, game, action):
                              miscInfo.gameRules.BALL_RADIUS)
     ballVelocVec = Vector2D(game.ball.velocity_x, game.ball.velocity_z)
     correctionVec = ( gateToBallVec.normalize() + \
-                      ballVelocVec.normalize() ).normalize() * \
-                      ( miscInfo.touchDst2d / 2 )
+                      ballVelocVec.normalize() * 0.3 ).normalize() * \
+                      ( miscInfo.touchDst2d * 0.9 )
     tgtPt = ballVec + correctionVec
     botControl.botToPoint(tgtPt, bot, action)
     return
@@ -271,8 +288,8 @@ def doDefend(me, game, action):
       ticksLeft = b.tick - game.current_tick
       bPt = Vector2D(b.x, b.z)
       ticksNeed = botControl.approxTimeToPoint(bPt, game, me)
-      if (ticksNeed < 0):
-        pdb.set_trace()
+      #if (ticksNeed < 0):
+        #pdb.set_trace()
       ticksNeedToJump, v0 = \
         botControl.calculateJump(b.y - \
                                  miscInfo.gameRules.BALL_RADIUS - \
