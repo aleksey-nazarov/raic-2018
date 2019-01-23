@@ -51,6 +51,8 @@ class Vector2D:
   # Нормализация вектора (приведение длины к 1)
   def normalize(self):
       len_ = self.len()
+      if (len_ == 0):
+        return Vector2D(0, 0)
       return Vector2D(self.x/len_, self.z/len_)
 
   # скалярное умножение векторов

@@ -39,11 +39,10 @@ def getDefencePoint(rules):
 def getStrikePoint(game): # (game: Game)
   '''
   dstDelta = miscInfo.gameRules.ROBOT_MIN_RADIUS + \
-             miscInfo.gameRules.BALL_RADIUS
-  '''
-  dstDelta = miscInfo.gameRules.ROBOT_MIN_RADIUS + \
              miscInfo.gameRules.BALL_RADIUS - \
              0.20 # в лучших традициях подбирается экспертным путем ((
+  '''
+  dstDelta = miscInfo.touchDst2d - 0.1
   
   if ( game.ball.z < miscInfo.aimPoint.z ):
     pt2 = Vector3D(game.ball.x, game.ball.y, game.ball.z)
@@ -117,6 +116,14 @@ def init(me, rules, game):
     botControl = BotController(rules)
     # ====
 
+    # расстояние по горизонтали между центрами соприкасающихся мяча и робота,
+    # лежащих на полу
+    miscInfo.touchDst2d = ( (miscInfo.gameRules.BALL_RADIUS + \
+                             miscInfo.gameRules.ROBOT_MIN_RADIUS) ** 2 - \
+                            (miscInfo.gameRules.BALL_RADIUS - \
+                             miscInfo.gameRules.ROBOT_MIN_RADIUS) ** 2 ) ** 0.5
+    
+
     
     # макс. высота, на которую может запрыгнуть робот
     # (пока без нитры и акробатики)
@@ -163,9 +170,40 @@ def setRoles(game):
        game.ball.z != 0 ): # новый розыгрыш мяча
     miscInfo.rolesGiven = False
 
-def doAttack(me, game, action):
+def doAttack(bot, game, action):
+
+  botVec = Vector2D(bot.x, bot.z)
+  ballVec = Vector2D(game.ball.x, game.ball.z)
+
+  # если мяч позади нас, отрабатываем возвращение
+  if (bot.z > game.ball.z):
+    botControl.pursueBall(bot, game, action)
+    return
+
   prTrajectory = ballPred.getPredictedTrajectory()
 
+  # частный случай - робот вблизи мяча, который катится (не прыгает)
+  flatTrajectory = True
+  for b in prTrajectory[:30]:
+    if ( b.y > miscInfo.gameRules.BALL_RADIUS + 1 ):
+      flatTrajectory = False
+      break
+  if ( flatTrajectory == True and
+       (botVec - ballVec).len() < miscInfo.touchDst2d * 2 ):
+    # точка удара по мячу
+    gateToBallVec = ballVec - \
+                    Vector2D(0.0, miscInfo.gameRules.arena.depth / 2 - \
+                             miscInfo.gameRules.BALL_RADIUS)
+    ballVelocVec = Vector2D(game.ball.velocity_x, game.ball.velocity_z)
+    correctionVec = ( gateToBallVec.normalize() + \
+                      ballVelocVec.normalize() ).normalize() * \
+                      ( miscInfo.touchDst2d / 2 )
+    tgtPt = ballVec + correctionVec
+    botControl.botToPoint(tgtPt, bot, action)
+    return
+  
+
+  # общий случай - мяч где-то летает
   ballInterceptionPos = None
 
   ptsCount = len(prTrajectory)
@@ -179,10 +217,25 @@ def doAttack(me, game, action):
   if (ballInterceptionPos == None):
     return
 
-  intcptPt = Vector2D(ballInterceptionPos.x,
-                      ballInterceptionPos.z - 1.0)
+  # точка удара по мячу
+  ballVelocVec = Vector2D(game.ball.velocity_x, game.ball.velocity_z)
+  ballToGateVec = Vector2D(0.0, miscInfo.gameRules.arena.depth / 2 - \
+                           miscInfo.gameRules.BALL_RADIUS) - \
+                  ballVec
+  if ( ballVelocVec.scalarProjectOn(ballToGateVec) <= 0 ):
+    correctionVec = ( (Vector2D(0,0) - ballToGateVec).normalize() + \
+                      ballVelocVec.normalize() ).normalize() * \
+                      ( miscInfo.touchDst2d / 2 )
+  else:
+    # чет я не уверен
+    correctionVec = ( (Vector2D(0,0) - ballToGateVec).normalize() * 2.0 + \
+                      ballVelocVec.normalize() ).normalize() * \
+                      ( miscInfo.touchDst2d / 2)
 
-  botControl.botToPointAndStop(intcptPt, me, action)
+  intcptPt = Vector2D(ballInterceptionPos.x + correctionVec.x,
+                      ballInterceptionPos.z + correctionVec.z)
+
+  botControl.botToPointAndStop(intcptPt, bot, action)
 
 def doDefend(me, game, action):
   prTrajectory = ballPred.getPredictedTrajectory()
@@ -309,8 +362,8 @@ class MyStrategy:
     initTick(game) #runs once per tick
     setRoles(game) #runs once per tick
 
-    if (game.current_tick % 1000 == 0):
-      print(game.current_tick)
+    #if (game.current_tick % 100 == 0):
+      #print(game.current_tick)
 
     if ( miscInfo.roles[me.id] == 'attacker' ):
       '''
@@ -319,6 +372,8 @@ class MyStrategy:
       botControl.botToPointAndStop(tgtPt, me, action)
       '''
       doAttack(me, game, action)
+      botControl.preventWallCollision(me, action)
+      
     else: # ( miscInfo.roles[me.id] == 'defender' )
       doDefend(me, game, action)
 

@@ -24,21 +24,66 @@ class BotController:
     # макс. время, за которое робот достигает верхней точки траектории
     # ( при, как нетрудно догадаться,  прыжке с максимальной начальной скоростью)
     self.maxFlightHalfTime = flT
-    
+
+  def pursueBall(self, bot, game, action):
+    touchDst2d = ( (self.rules.BALL_RADIUS + \
+                  self.rules.ROBOT_MIN_RADIUS) ** 2 - \
+                 (self.rules.BALL_RADIUS - \
+                  self.rules.ROBOT_MIN_RADIUS) ** 2 ) ** 0.5
+    botVec = Vector2D(bot.x, bot.z)
+    ballVec = Vector2D(game.ball.x, game.ball.z)
+    vecToBall = ballVec - botVec
+    dst = vecToBall.len()
+    if ( bot.z > game.ball.z ):
+      #pdb.set_trace()
+      if ( dst < touchDst2d * 2 ** 0.5 ):
+        # ruuuun!
+        sign = -1 if ( bot.x < game.ball.x ) else 1
+        action.target_velocity_x = self.rules.ROBOT_MAX_GROUND_SPEED * sign
+        return
+
+      intermVec = vecToBall.normalize()      
+      multiplier = touchDst2d * 2 ** 0.5
+      if ( bot.x <= game.ball.x ):
+        #ortoVec = Vector2D(intermVec.z, Vector2D(0.0, 0.0) - intermVec.x)
+        ortoVec = Vector2D(intermVec.z, - intermVec.x)
+      else:
+        #ortoVec = Vector2D(Vector2D(0.0, 0.0) - intermVec.z, intermVec.x)
+        ortoVec = Vector2D(- intermVec.z, intermVec.x)
+      pursuePt = vecToBall + ortoVec * multiplier
+
+      #velocityVec = (pursuePt - botVec).normalize() * \
+      velocityVec = pursuePt.normalize() * \
+                    self.rules.ROBOT_MAX_GROUND_SPEED
+
+      '''
+      tt = pursuePt - botVec
+      print(game.current_tick)
+      print(game.ball.x, game.ball.z)
+      print(pursuePt.x, pursuePt.z)
+      print(vecToBall.x, vecToBall.z)
+      print(ortoVec.x, ortoVec.z)
+      print(botVec.x, botVec.z)
+      print(tt.x, tt.z)
+      '''
+      
+
+      action.target_velocity_x = velocityVec.x
+      action.target_velocity_z = velocityVec.z
+
   def preventWallCollision(self, bot, action):
-    maxX = self.rules.arena.width / 2 - self.rules.arena.bottom_radius \
-           - self.rules.BALL_RADIUS
+    maxX = self.rules.arena.width / 2 - self.rules.arena.bottom_radius
     maxGoalX = self.rules.arena.goal_width / 2 - self.rules.BALL_RADIUS
     if (abs(bot.x) < maxGoalX):
       maxZ = self.rules.arena.depth / 2 + self.rules.arena.goal_depth - \
-             self.rules.arena.bottom_radius - \
-             self.rules.BALL_RADIUS
+             self.rules.arena.bottom_radius
     else:
-      maxZ = self.rules.arena.depth / 2 - self.rules.arena.bottom_radius - \
-             self.rules.BALL_RADIUS
-    
-    sameSignX = bot.x * bot. velocity_x # совпадение знаков координаты и скорости
-    if ( sameSignX ):
+      maxZ = self.rules.arena.depth / 2 - self.rules.arena.bottom_radius
+      
+    sameSignX = bot.x * bot.velocity_x > 0 # совпадение знаков координаты и скорости
+    sameVelSignX = bot.velocity_x * action.target_velocity_x > 0
+    if ( sameSignX and
+         sameVelSignX ):
       dstX = maxX - abs(bot.x)
       if (dstX <= 0 ):
         maxVelX = 0
@@ -48,8 +93,10 @@ class BotController:
         signVelX = -1.0 if bot.velocity_x > 0 else -1.0
         action.target_velocity_x = signVelX * maxVelX
 
-    sameSignZ = bot.z * bot. velocity_z # совпадение знаков координаты и скорости
-    if ( sameSignZ ):
+    sameSignZ = bot.z * bot. velocity_z > 0# совпадение знаков координаты и скорости
+    sameVelSignZ = bot.velocity_z * action.target_velocity_z > 0
+    if ( sameSignZ and
+         sameVelSignZ ):
       dstZ = maxZ - abs(bot.z)
       if (dstZ <= 0 ):
         maxVelZ = 0
@@ -285,7 +332,9 @@ class BotController:
       print('doDecideJump(): trajectory error')
       return
 
-    if ( bot.z < game.ball.z or
+    #pdb.set_trace()
+
+    if ( bot.z > game.ball.z or
          bot.touch == False ):
       return
 
@@ -307,25 +356,35 @@ class BotController:
         break
 
     if ( collisionTick == None ):
+      #pdb.set_trace()
       return
 
-    # требуемая высота)
+    
+
+    # требуемая высота
     minDeltaH = (radiusSum ** 2 - dst2d ** 2) ** 0.5
     if ( minDeltaH < 0 ):
       print('doDecideJump(): minDeltaH error')
       return
-    standardBotCY = game.ball.y - radiusSum + 0.5
+    #standardBotCY = game.ball.y - radiusSum + 0.5
+    standardBotCY = ballTrajectory[i].y - radiusSum + 0.5
     if ( standardBotCY < self.rules.ROBOT_MIN_RADIUS ):
       # прыжок не требуется
+      #pdb.set_trace()
       return
     # needed bot center y
-    needBotCY = min(game.ball.y - minDeltaH,
+    needBotCY = min(ballTrajectory[i].y - minDeltaH,
                     standardBotCY )
-    if ( needBotCY < self.maxReachableZ ):
+    if ( needBotCY > self.maxReachableZ ):
       # не допрыгнем
+      #pdb.set_trace()
       return
     jumpTicks, v0 = self.calculateJump(needBotCY)
-    if (jumpTicks == collisionTick):
+    #print(jumpTicks, v0)
+    #if (jumpTicks == collisionTick):
+    if (jumpTicks in [collisionTick,
+                      collisionTick - 1,
+                      collisionTick + 1]):
       action.jump_speed = v0
     
 
