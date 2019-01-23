@@ -162,7 +162,27 @@ def setRoles(game):
        game.ball.x != 0 or
        game.ball.z != 0 ): # новый розыгрыш мяча
     miscInfo.rolesGiven = False
-    
+
+def doAttack(me, game, action):
+  prTrajectory = ballPred.getPredictedTrajectory()
+
+  ballInterceptionPos = None
+
+  ptsCount = len(prTrajectory)
+
+  for i in range(1, ptsCount - 1):
+    if (prTrajectory[i].y < prTrajectory[i-1].y and
+        prTrajectory[i].y < prTrajectory[i+1].y):
+      ballInterceptionPos = prTrajectory[i]
+      break
+
+  if (ballInterceptionPos == None):
+    return
+
+  intcptPt = Vector2D(ballInterceptionPos.x,
+                      ballInterceptionPos.z - 1.0)
+
+  botControl.botToPointAndStop(intcptPt, me, action)
 
 def doDefend(me, game, action):
   prTrajectory = ballPred.getPredictedTrajectory()
@@ -171,7 +191,7 @@ def doDefend(me, game, action):
                    -(miscInfo.gameRules.arena.depth / 2.0) - 1.5 )
 
   defAreaWidth = miscInfo.gameRules.arena.goal_width
-  defAreaDepth = 6.0 # эмпирически, как и всегда ((
+  defAreaDepth = 13.0 # эмпирически, как и всегда ((
   defAreaZeroZ = - (miscInfo.gameRules.arena.depth / 2.0)
   defAreaZ = defAreaZeroZ + defAreaDepth
 
@@ -228,8 +248,8 @@ def doDefend(me, game, action):
   return
   '''
 
-  if (lineCrossX != None and interceptionPoint == None):
-    print(game.current_tick, ' FUCK, GOAL IMMINENT')
+  #if (lineCrossX != None and interceptionPoint == None):
+    #print(game.current_tick, ' FUCK, GOAL IMMINENT')
 
   # прочие случаи
   if (me.z > game.ball.z or 
@@ -244,10 +264,10 @@ def doDefend(me, game, action):
     ticksNeedToJump, v0 = \
       botControl.calculateJump(h)
 
-    print(game.current_tick, ticksNeedToJump, ticksNeedToRoll, ticksLeft)
-    if ( ticksLeft - ticksNeedToRoll - ticksNeedToJump <= 0 ):
-      #botControl.botToPoint(tgtPt, me, action)
-      botControl.botToPointAndStop(tgtPt, me, action)
+    #print(game.current_tick, ticksNeedToJump, ticksNeedToRoll, ticksLeft)
+    if ( ticksLeft - ticksNeedToRoll <= 0 ):
+      botControl.botToPoint(tgtPt, me, action)
+      #botControl.botToPointAndStop(tgtPt, me, action)
     else:
       readyPt = copy.copy(waitPt)
       if (lineCrossX != None):
@@ -259,6 +279,8 @@ def doDefend(me, game, action):
          me.touch == True ):
       action.jump_speed = v0
     '''
+    botControl.doDecideJump(prTrajectory, game, me, action)
+    
     kickBall = ( Vector3D(game.ball.x, game.ball.y, game.ball.z) - \
                  Vector3D(me.x, me.y, me.z) ).len() <= \
                ( miscInfo.gameRules.ROBOT_MAX_RADIUS + \
@@ -287,28 +309,16 @@ class MyStrategy:
     initTick(game) #runs once per tick
     setRoles(game) #runs once per tick
 
+    if (game.current_tick % 1000 == 0):
+      print(game.current_tick)
+
     if ( miscInfo.roles[me.id] == 'attacker' ):
+      '''
       tgtPt = Vector2D(-27 if me.x < 0 else 27,
                        25)
       botControl.botToPointAndStop(tgtPt, me, action)
-      # TODO временно так
       '''
-      if ( me.z > game.ball.z ):
-        pursuePt = getPursuePoint(me, game)
-        pursuePt2D = Vector2D(pursuePt.x, pursuePt.z)
-        #botToPointAndKick(pursuePt2D, me, action, rules)
-        botControl.botToPoint(pursuePt2D, me, action)
-        botControl.preventWallCollision(me, action)
-      else:
-        strikePoint = botControl.getStrikePoint(game)
-        strikePt2D = Vector2D(strikePoint.x, strikePoint.z)
-        botControl.botToPoint(strikePt2D, me, action)
-
-        botControl.preventWallCollision(me, action)
-
-        # botToPointAndKick не обрабатывает прыжки!
-        #botControl.assignJump(me, ballPred, game, action)
-      '''
+      doAttack(me, game, action)
     else: # ( miscInfo.roles[me.id] == 'defender' )
       doDefend(me, game, action)
 

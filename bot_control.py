@@ -279,6 +279,61 @@ class BotController:
     if (timeAsTicks == True):
       t = round(t / self.tik)
     return (t, v0)
+
+  def doDecideJump(self, ballTrajectory, game, bot, action):
+    if ( ballTrajectory[0].tick != game.current_tick ):
+      print('doDecideJump(): trajectory error')
+      return
+
+    if ( bot.z < game.ball.z or
+         bot.touch == False ):
+      return
+
+    # полагая, что робот прыгнет прям сейчас
+    botMovePerTick = Vector2D(bot.velocity_x * self.tik,
+                              bot.velocity_z * self.tik)
+    botStartRVec = Vector2D(bot.x, bot.z)
+    radiusSum = self.rules.ROBOT_MIN_RADIUS + self.rules.BALL_RADIUS
+
+    collisionTick = None
+
+    for i in range(1,32):
+      botPos2d = botStartRVec + botMovePerTick * i
+      ballPos2d = Vector2D(ballTrajectory[i].x,
+                         ballTrajectory[i].z)
+      dst2d =( ballPos2d - botPos2d).len()
+      if (dst2d < radiusSum):
+        collisionTick = i
+        break
+
+    if ( collisionTick == None ):
+      return
+
+    # требуемая высота)
+    minDeltaH = (radiusSum ** 2 - dst2d ** 2) ** 0.5
+    if ( minDeltaH < 0 ):
+      print('doDecideJump(): minDeltaH error')
+      return
+    standardBotCY = game.ball.y - radiusSum + 0.5
+    if ( standardBotCY < self.rules.ROBOT_MIN_RADIUS ):
+      # прыжок не требуется
+      return
+    # needed bot center y
+    needBotCY = min(game.ball.y - minDeltaH,
+                    standardBotCY )
+    if ( needBotCY < self.maxReachableZ ):
+      # не допрыгнем
+      return
+    jumpTicks, v0 = self.calculateJump(needBotCY)
+    if (jumpTicks == collisionTick):
+      action.jump_speed = v0
+    
+
+      
+
+      
+      
+      
   
   def assignJump(self, bot, ballPred, game, action):
     mfhTime = self.maxFlightHalfTime
