@@ -318,9 +318,9 @@ class BotController:
       if (timeAsTicks == True):
         t = round(t / self.tik)
       return (t, 200)
-    jHeight = height - self.rules.ROBOT_MIN_RADIUS
-    if (jHeight <= self.rules.ROBOT_MIN_RADIUS):
+    if (height <= self.rules.ROBOT_MIN_RADIUS):
       return (0, 0.0)
+    jHeight = height - self.rules.ROBOT_MIN_RADIUS
     t = (2 * jHeight / self.rules.GRAVITY) ** 0.5
     v0 = t * self.rules.GRAVITY
     if (timeAsTicks == True):
@@ -373,13 +373,13 @@ class BotController:
       #pdb.set_trace()
       return
     # needed bot center y
-    needBotCY = min(ballTrajectory[i].y - minDeltaH,
+    needBotCY = min(ballTrajectory[i].y - minDeltaH,#max?
                     standardBotCY )
     if ( needBotCY > self.maxReachableZ ):
       # не допрыгнем
       #pdb.set_trace()
       return
-    jumpTicks, v0 = self.calculateJump(needBotCY)
+    jumpTicks, v0 = self.calculateJump(needBotCY) # check
     #print(jumpTicks, v0)
     #if (jumpTicks == collisionTick):
     if (jumpTicks in [collisionTick,

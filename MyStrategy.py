@@ -183,6 +183,17 @@ def doAttack(bot, game, action):
   prTrajectory = ballPred.getPredictedTrajectory()
 
   # da cannon shootz!
+  enemyBotsVecs = [Vector3D(b.x, b.y, b.z) for b in game.robots if b.is_teammate == False]
+  minEnemyDst = min([(Vector3D(game.ball.x, game.ball.y, game.ball.z) - \
+                      v).len() for v in enemyBotsVecs])
+  
+  kickBall = ( bot.z < game.ball.z and
+               ( Vector3D(game.ball.x, game.ball.y, game.ball.z) - \
+                 Vector3D(bot.x, bot.y, bot.z) ).len() <= \
+               ( miscInfo.gameRules.ROBOT_MAX_RADIUS + \
+                 miscInfo.gameRules.BALL_RADIUS ) and
+               minEnemyDst < 6.0)
+  '''
   kickBall = ( bot.z > miscInfo.gameRules.arena.depth / 2 - \
                        miscInfo.gameRules.arena.corner_radius and
                abs(bot.x) < miscInfo.gameRules.arena.goal_width / 2 and
@@ -193,6 +204,7 @@ def doAttack(bot, game, action):
                bot.z < game.ball.z and
                game.ball.z - bot.z > 2.0 and
                abs(bot.x - game.ball.x) < 1.0 )
+  '''
   
   
   if ( kickBall ):
@@ -212,11 +224,16 @@ def doAttack(bot, game, action):
                     Vector2D(0.0, miscInfo.gameRules.arena.depth / 2 - \
                              miscInfo.gameRules.BALL_RADIUS)
     ballVelocVec = Vector2D(game.ball.velocity_x, game.ball.velocity_z)
+    '''
     correctionVec = ( gateToBallVec.normalize() + \
                       ballVelocVec.normalize() * 0.3 ).normalize() * \
                       ( miscInfo.touchDst2d * 0.9 )
     tgtPt = ballVec + correctionVec
+    '''
+    tgtPt = ballVec + gateToBallVec.normalize() * miscInfo.touchDst2d * 0.5
     botControl.botToPoint(tgtPt, bot, action)
+    
+    
     return
   
 
@@ -252,7 +269,19 @@ def doAttack(bot, game, action):
   intcptPt = Vector2D(ballInterceptionPos.x + correctionVec.x,
                       ballInterceptionPos.z + correctionVec.z)
 
-  botControl.botToPointAndStop(intcptPt, bot, action)
+  #
+  # t = 5 ticks, s = 0.35, v = 8.3
+  # t = 10 ticks, s = 1.4, v = 16.6
+  
+  readyPt = Vector2D(ballInterceptionPos.x, ballInterceptionPos.z) + \
+            (Vector2D(0,0) - ballToGateVec).normalize() * \
+            (1.0 + miscInfo.touchDst2d)
+  if (ballInterceptionPos.tick - game.current_tick > 10):
+    botControl.botToPointAndStop(readyPt, bot, action)
+  else:
+    botControl.botToPoint(intcptPt, bot, action)
+  
+  #botControl.botToPointAndStop(intcptPt, bot, action)
 
 def doDefend(me, game, action):
   prTrajectory = ballPred.getPredictedTrajectory()
@@ -390,6 +419,14 @@ class MyStrategy:
       '''
       doAttack(me, game, action)
       botControl.preventWallCollision(me, action)
+
+      if (me.touch == False):
+        action.target_velocity_x = 0.0
+        action.target_velocity_z = 0.0
+        action.target_velocity_y = - rules.MAX_ENTITY_SPEED
+        action.jump_speed = 0.0
+        action.use_nitro = True
+      
       
     else: # ( miscInfo.roles[me.id] == 'defender' )
       doDefend(me, game, action)
